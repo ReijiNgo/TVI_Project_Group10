@@ -1,0 +1,25 @@
+# Python & Automation cache
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Không đẩy các file ảnh máy ảo nặng lên GitHub
+*.vmdk
+*.qcow2
+*.ova
+*.iso
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# LaTeX build files (chỉ giữ lại file .tex và .pdf)
+*.aux
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.toc
+*.out
