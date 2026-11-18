@@ -1,0 +1,29 @@
+devices:
+  - hostname: HCMC-CORE-SW01
+    management_ip: 192.168.1.10
+    device_type: cisco_ios
+    port: 22
+    site: HCMC
+    enabled: true
+    profile: hcmc_access
+  - hostname: HANOI-RND-SW01
+    management_ip: 192.168.2.10
+    device_type: cisco_ios
+    port: 22
+    site: HANOI
+    enabled: true
+    profile: hanoi_access
+  - hostname: DANANG-LOG-SW01
+    management_ip: 192.168.3.10
+    device_type: cisco_ios
+    port: 22
+    site: DANANG
+    enabled: true
+    profile: danang_access
+  - hostname: HANOI-RND-SW02
+    management_ip: 192.168.2.11
+    device_type: cisco_ios
+    port: 22
+    site: HANOI
+    enabled: false
+    profile: hanoi_access

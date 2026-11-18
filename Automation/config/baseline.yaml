@@ -1,0 +1,8 @@
+version: 1
+ntp_server: 10.10.10.50
+# Exact institutional banner wording requires Leader approval; null disables it.
+banner: null
+aaa:
+  enabled: false
+syslog:
+  enabled: false
