@@ -1,0 +1,10 @@
+! NOT DEPLOYABLE: Leader traffic matrix approval required.
+! HQ Finance: identical IPv4/IPv6 destination policies on DIST01/02 Vlan10 OUT.
+! HQ Engineering source policy: DIST01/02 Vlan20 IN.
+! Hanoi Engineering source policy: router Gi0/1.20 IN.
+! Da Nang IoT source policy: router Gi0/1.30 IN.
+! Management network destination policy: DIST01/02 Vlan99 OUT and branch Gi0/1.99 OUT.
+! Device management is separately gated through conditional VTY ACLs.
+! Do not attach an empty ACL; do not turn these comments into blanket deny policies.
+! Shared services: decide DHCP relay UDP67, DNS UDP/TCP53, NTP UDP123 and return flows.
+! Routed ACL does not filter Finance PC <-> server in the same VLAN10.

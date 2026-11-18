@@ -1,0 +1,7 @@
+! NOT DEPLOYABLE: no fake MAC addresses and no active inspection command here.
+! HQ VLAN10: server 10.10.10.50 on CORE Gi0/0 is static. DHCP trust does NOT imply DAI trust.
+! Need server MAC/ARP ACL OR explicit approval for DAI trust on this isolated server port;
+! inventory all other static VLAN10 clients before enabling inspection.
+! Hanoi VLAN50: determine AP management IP/MAC and bridged-client DHCP behavior.
+! Da Nang VLAN30: obtain static IoT MAC/IP/port inventory or prove every endpoint is DHCP.
+! VLAN99: DAI excluded everywhere until a complete static-management strategy is verified.

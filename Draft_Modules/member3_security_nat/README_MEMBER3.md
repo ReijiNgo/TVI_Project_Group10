@@ -1,49 +1,114 @@
-# THÀNH VIÊN 3: HƯỚNG DẪN LÀM BÀI MẢNG SECURITY, NAT & NETWORK AUTOMATION (STEP 7 & STEP 9)
+# Member 3 - Step 7 Security and Step 9 Automation
 
-- **Nhánh Git làm việc:** `feature/security-automation`
-- **Thư mục soạn thảo CLI:** `Draft_Modules/member3_security_nat/member3_security_nat_draft.cfg`
-- **Thư mục code Automation:** `Automation/inventory.yaml` và `Automation/auto_provision.py`
-- **Tài liệu tham chiếu bắt buộc:** [`Specs/IP_Addressing_Schema.md`](../../Specs/IP_Addressing_Schema.md)
+Only additive local source was implemented. No device has been configured or
+runtime-verified here. [IP Schema](../../Specs/IP_Addressing_Schema.md) remains immutable.
+[Step 9](../../Automation/README_STEP9.md) intentionally cannot deploy Step 7 fragments.
 
-> **Lưu ý Zero-Conflict:** Không lưu mật khẩu dạng chữ rõ (plaintext password) trong file Python hoặc YAML. Tuân thủ đúng IP quản trị VLAN 99 và quy hoạch subnet trong `Specs/IP_Addressing_Schema.md`.
+## Artifact classes
 
----
+* `devices/<exact-hostname>_step7.cfg`: nine enterprise device-specific additive
+  fragments. Preconditions still include correct base LAN/WAN configuration,
+  console fallback, backup, real image parser and object-name collision review.
+* `conditional/`: executable candidates with MANUAL preflight gates. Never paste
+  the whole directory or both VTY range variants. Not an automatic deployment source.
+* `proposals/*.cfg.disabled`: comments only, no active blanket-deny ACL or fake MAC.
+* `member3_security_nat_draft.cfg`: deprecated non-executable pointer, not a duplicate implementation.
 
-## Danh sách công việc cần hoàn thành (Checklist theo Rubric & Pre-Submission Checklist)
+Read [policy decisions](SECURITY_POLICY_MATRIX.md), [integration notes](integration_notes.md),
+[SSH bootstrap/recovery](SSH_BOOTSTRAP.md) and [test sequence](SECURITY_TEST_PLAN.md).
 
-### 1. Step 7: Security, NAT/PAT & Device Hardening
-- [ ] **PAT / NAT Overload trên 3 Router biên (`HCMC-EDGE-RTR01`, `HANOI-RND-RTR01`, `DANANG-LOG-RTR01`):**
-  - Gắn `ip nat outside` trên cổng WAN `Gi0/0`; gắn `ip nat inside` trên các cổng/sub-interface hướng về mạng nội bộ (lưu ý **KHÔNG NAT** lưu lượng đi qua IPsec VPN Tunnel giữa 3 chi nhánh bằng ACL loại trừ `deny` trước `permit`).
-  - Cấu hình `ip nat inside source list ACL_NAT_INTERNET interface GigabitEthernet0/0 overload`.
-- [ ] **Extended ACL Cách ly Mạng Khách & Bảo vệ Phân vùng Nhạy cảm:**
-  - Tại **Hà Nội (`HANOI-RND-RTR01`)**: Gắn ACL vào `Gi0/1.50` (`VLAN 50 - GUEST_WIFI`: `10.20.50.0/25`):
-    - **Chặn (`deny ip`)** truy cập vào tất cả mạng nội bộ TVI (`10.10.0.0/16`, `10.20.0.0/16`, `10.30.0.0/16`, `192.168.0.0/16`).
-    - **Cho phép (`permit`)** truy cập DHCP/DNS cần thiết (nếu cấp từ server) và đi Internet (`8.8.8.8` / `any`).
-  - Tại **HQ & Đà Nẵng**: Viết ACL bảo vệ phân vùng `EXEC_FINANCE` (`10.10.10.0/24`) và `LOGISTICS_OPS` (`10.30.30.0/24`).
-- [ ] **Layer 2 Security (Port Security, DHCP Snooping, DAI) trên các Switch Access (`vIOS-L2` 16 ports):**
-  - `switchport port-security` (giới hạn `maximum 2`, `mac-address sticky`, `violation restrict`) trên các cổng Access người dùng (`HCMC-CORE-SW01 Gi0/3, Gi1/0-1`; `HANOI-RND-SW01/02 Gi1/0-1, Gi1/2`; `DANANG-LOG-SW01 Gi1/0-1`; chú ý không chặn nhầm cổng Server `Gi0/0` hay Automation Node `Gi1/3` nếu cắm nhiều VM).
-  - `ip dhcp snooping` + `ip dhcp snooping vlan 10,20,30,50` + `ip dhcp snooping trust` trên các cổng Trunk uplink (`Gi0/1`, `Gi0/2`, `Port-channel 1`...).
-  - `ip arp inspection vlan 10,20,30,50` + `ip arp inspection trust` trên các cổng Trunk uplink.
-- [ ] **Device Hardening & SSHv2 trên toàn bộ 10 thiết bị (theo Trang 18 & 20 Đề bài):**
-  - `ip domain name tvi.lab`
-  - `crypto key generate rsa modulus 2048`
-  - `ip ssh version 2`
-  - `username admin privilege 15 secret Cisco123!`
-  - `line vty 0 4` $\rightarrow$ `transport input ssh`, `login local` (vô hiệu hóa hoàn toàn Telnet, `no ip http server`, ưu tiên HTTPS/SNMPv3).
+## NAT/PAT and Guest ACL
 
-### 2. Step 9: Network Automation (`Automation/inventory.yaml` & `Automation/auto_provision.py`)
-- [ ] **`Automation/inventory.yaml`:** Khai báo danh sách thiết bị chuẩn xác (`HCMC-CORE-SW01`: `192.168.1.10`, `HANOI-RND-SW01`: `192.168.2.10`, `DANANG-LOG-SW01`: `192.168.3.10`, `device_type: cisco_ios`, port SSH `22`).
-- [ ] **`Automation/auto_provision.py` (Python Netmiko + PyYAML):**
-  - Yêu cầu nhập username/password qua `input()` và `getpass()` (tuyệt đối không hardcode mật khẩu).
-  - Chụp trạng thái `show running-config` và `show ip interface brief` trước & sau khi cấu hình, lưu ra `Automation/backups/<hostname>_<timestamp>_backup.cfg`.
-  - Đẩy cấu hình chuẩn gồm `ntp server 10.10.10.50`, `banner motd`, và các VLAN chuẩn (`10: EXEC_FINANCE`, `20: RND_ENGINEERING`, `30: LOGISTICS_OPS`, `99: MANAGEMENT`).
-  - Bắt lỗi đầy đủ bằng `try/except` (`NetmikoTimeoutException`, `NetmikoAuthenticationException`, `Exception`) để không crash khi có node chết, và ghi log chi tiết vào `Automation/logs/automation.log`.
+| Router | NAT outside | NAT inside |
+|---|---|---|
+| HCMC-EDGE-RTR01 | Gi0/0 | Gi0/1, Gi0/2 |
+| HANOI-RND-RTR01 | Gi0/0 | Gi0/1.20, Gi0/1.50, Gi0/1.99 |
+| DANANG-LOG-RTR01 | Gi0/0 | Gi0/1.30, Gi0/1.99 |
 
----
+PAT matches exact site-local LAN/management subnets only. M3_NAT_INTERNET denies
+RFC1918 and the simulated WAN transport range as translation destinations before
+local-source Internet permits. NAT ACL deny means NO TRANSLATION, not packet drop.
 
-## Cách nộp bài khi hoàn thành
-```bash
-git add Draft_Modules/member3_security_nat/ Automation/
-git commit -m "feat(security-automation): complete Step 7 security/NAT & Step 9 Netmiko script"
-git push origin HEAD
-```
+M2 uses GRE over IPv4 with crypto-map TVI-GRE-CMAP on physical Gi0/0. Tunnel traffic
+is routed into GRE, outer source is Gi0/0, then matched GRE outer packets are protected
+by the existing IPsec map. There is no NAT marking on tunnels, no crypto selector/map
+change, no static NAT and no NAT66. Exemptions also prevent private translation if
+traffic selects the physical default path; they do NOT force encryption or stop a
+plaintext private packet from being forwarded. Correct private routes over tunnels,
+transport routes over ISP and no ISP private transit are mandatory integration gates.
+The source ACL checks cannot emulate IOS NAT/GRE processing or prove encryption.
+
+Hanoi Gi0/1.50 IN attaches M3_GUEST4_IN and M3_GUEST6_IN. IPv4 permits DHCP bootstrap,
+broadcast rebinding and UDP68->67 renewal to .50/the Guest gateway; all other private
+server/management/transit access is denied. Guest DNS is public 8.8.8.8 per BOTH M1
+DHCP alternatives. Public Internet access is allowed only for the Guest source subnet.
+No private DNS/NTP/SSH exception was invented. Guest access to .50 NTP advertised by
+one DHCP alternative remains pending; do not treat DHCP options as ACL authorization.
+
+IPv6 explicitly permits bounded on-link NS/NA, DAD and router solicitation, rejects
+Guest router advertisements/redirects, blocks all three corporate site /48s, overlay,
+WAN transport, ULA and non-exempt link-local/multicast destinations. Only Guest-source
+public traffic reaches the final permit. Return RA/ND and ICMPv6 Packet Too Big enter
+Guest via egress on this subinterface, not the inbound ACL; do not attach it OUT.
+No DHCPv6 server or IPv6 DNS endpoint was invented. Router ACLs cannot stop same-VLAN
+L2 attacks or authenticate ND; AP/client isolation and IPv6 first-hop protection are
+separate design decisions, not claimed complete here.
+
+## L2 scope and trust
+
+| Switch | Snooping VLANs | DHCP trusted ports | DAI trusted ports | Port Security |
+|---|---|---|---|---|
+| HQ CORE | 10,20 | Gi0/0 server; Gi0/1-2 uplinks | Gi0/1-2 | Gi0/3, Gi1/0-1 |
+| Hanoi SW01 | 20,50 | Gi0/1; Gi0/2-3 and Po1 | Gi0/1; Gi0/2-3 and Po1 | Gi1/0-1 |
+| Hanoi SW02 | 20,50 | Gi0/2-3 and Po1 | Gi0/2-3 and Po1 | Gi1/0-1 |
+| Da Nang SW01 | 30 | Gi0/1 | Gi0/1 | Gi1/0-1 |
+
+Client ports are explicitly untrusted. DHCP rate15pps applies only to known wired
+client ports. AP fan-out is unknown: no restrictive AP MAC/rate limit. Port Security
+uses max2/sticky/restrict, allowing a small workstation/VM variation while logging
+violations without err-disabling the entire port. Verify legitimate MAC counts before
+use. No Port Security on server/controller/AP/trunks/Po members. No port membership,
+PortFast/BPDU Guard, STP, native999, allowed-VLAN or LACP changes are made.
+Hanoi SW02 Gi0/1 stays unused/shutdown under M1; this module does not touch it.
+
+Option82 insertion is explicitly disabled on these access switches: no approved
+Option82 consumer exists and M1 relay fragments do not establish acceptance of
+Option82 with giaddr0 from downstream snooping. This compatible baseline leaves DHCP
+relay/server settings untouched; do not add allow-untrusted or trust-all on user ports.
+If M1 later requires Option82, a coordinated relay/server design and DORA regression
+must replace this choice. M1 IOS server trust-all alone is not proof of relay behavior.
+
+DAI trust commands alone do NOT enable inspection. DAI VLAN20 activation is separate
+for HQ CORE and Hanoi SW01/02, gated on all relevant actual bindings or approved
+static exceptions and binding recovery after reboot. No active DAI for VLAN10,50,30
+or99: missing static server/AP/IoT data are listed in proposals/dai_pending.cfg.disabled.
+DHCP trust on HQ server Gi0/0 is NOT DAI trust. No redundant ARP ACL is manufactured
+for a trusted interface; an approved ARP ACL is needed only for statics entering
+untrusted interfaces. DIST Snooping/DAI are intentionally absent.
+
+## Hardening and merge procedure
+
+Nine base fragments set SSHv2/timeouts, disable plain HTTP/PAD and add log timestamps.
+They do not create accounts, alter enable secret, generate keys, enable AAA or attach
+VTY policy. The existing M1 local users are preserved. Router SSH remains unusable
+until console bootstrap creates an approved account/key and routing is correct.
+ISP is outside these nine enterprise fragments; coordinate any ISP changes with M2/Leader.
+
+Check exact hostname, backup, inspect existing M3_* objects and attachments; STOP on
+collision and review an explicit object update. Enter global configuration mode via
+console and apply only the matching reviewed fragment. Files omit hostname, conf t,
+end, write memory and reset commands. Do not concatenate raw startup/module files:
+M1 fragments end in end, while M2 fragments expect global configuration context.
+Stop on any unsupported command; don't silently substitute interface/crypto settings.
+
+All corporate SVI ACL decisions remain unapproved, including equivalent policies on
+both HQ DIST switches. Those comments do not authorize attaching an empty ACL.
+VTY conditional files permit IPv4 controller 192.168.1.100 only and close IPv6 SSH
+until authorized source addresses exist. Choose actual VTY range and prove alternate
+console/new controller session before restricting it; existing AAA needs a separate
+method-list-compatible review. See the console runbook.
+
+Static validator: [security_validation.py](../../Automation/security_validation.py).
+It is a restricted grammar/packet-match model, not a Cisco IOS syntax validator.
+Reference: [Cisco GRE/IPsec NAT](https://www.cisco.com/c/en/us/support/docs/ip/generic-routing-encapsulation-gre/9221-quicktip.html),
+[Cisco Snooping](https://www.cisco.com/c/en/us/support/docs/ip/dynamic-host-configuration-protocol-dhcp-dhcpv6/217055-operate-and-troubleshoot-dhcp-snooping.html).
