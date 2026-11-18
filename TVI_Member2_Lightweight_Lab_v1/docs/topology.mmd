@@ -1,0 +1,14 @@
+flowchart TB
+    ISP[ISP-CORE-RTR01\nAS65000]
+    HQ[HCMC-EDGE-RTR01\nAS65001]
+    HN[HANOI-RND-RTR01\nAS65002]
+    DN[DANANG-LOG-RTR01\nAS65003]
+    D1[HCMC-DIST-SW01]
+    D2[HCMC-DIST-SW02]
+    ISP ---|Gi0/0 - Gi0/0| HQ
+    ISP ---|Gi0/1 - Gi0/0| HN
+    ISP ---|Gi0/2 - Gi0/0| DN
+    HQ ---|Gi0/1 - Gi0/1| D1
+    HQ ---|Gi0/2 - Gi0/1| D2
+    HQ -.->|GRE/IPsec Tunnel12 (LOGICAL)| HN
+    HQ -.->|GRE/IPsec Tunnel13 (LOGICAL)| DN
