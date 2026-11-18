@@ -1,0 +1,80 @@
+% ==============================================================================
+% SECTION 6: TESTING, FAILOVER VERIFICATION, CHALLENGES & CONCLUSION (STEP 10)
+% ==============================================================================
+\section{Verification Plan, Engineering Challenges \& Conclusion (Step 10)}
+
+\subsection{EVE-NG Emulation Verification \& Failover Test Matrix}
+Upon completing device configuration integration across all 10 Cisco vIOS/vIOS-L2 nodes in EVE-NG, the integrated topology is validated against the six mandatory test cases in Table~\ref{tab:verification_matrix}, including live link/gateway failover convergence under 3 minutes.
+
+\begin{table}[H]
+\centering
+\caption{End-to-End Verification and Failover Acceptance Test Matrix.}
+\label{tab:verification_matrix}
+\scriptsize
+\begin{tabularx}{\textwidth}{|p{0.8cm}|p{3.4cm}|p{4.3cm}|X|}
+\hline
+\textbf{ID} & \textbf{Verification Domain} & \textbf{Target CLI / Probe Commands} & \textbf{Acceptance Criteria} \\
+\hline
+\textbf{T1} & L2 STP, LACP \& HSRP & \texttt{show etherchannel summary}; \texttt{show standby brief} & \texttt{Po1} operational (\texttt{SU}); \texttt{DIST-SW01} Active (110) matching STP Root. \\
+\hline
+\textbf{T2} & Centralized DHCP Relay & \texttt{ipconfig} / \texttt{show ip dhcp binding} & HQ VLAN~20, Hanoi VLAN~20/50, and Da Nang VLAN~30 obtain dynamic IPs from \texttt{10.10.10.50}. \\
+\hline
+\textbf{T3} & Underlay, eBGP \& IPsec & \texttt{show ip ospf neighbor}; \texttt{show ip bgp summary}; \texttt{show crypto isakmp sa} & OSPF \texttt{FULL} across Area~0; eBGP \texttt{Established} with \texttt{AS 65000}; \texttt{Tunnel12/13} \texttt{UP/UP}. \\
+\hline
+\textbf{T4} & Security, NAT \& QoS & Ping \texttt{8.8.8.8} vs. \texttt{10.10.10.50} from Guest; \texttt{show policy-map int Gi0/0} & Guest reaches Internet via PAT but is blocked from \texttt{10.x/192.168.x}; LLQ matches \texttt{EF/AF31}. \\
+\hline
+\textbf{T5} & Python Automation & \texttt{python auto\_provision.py} & Timestamped backups created in \texttt{backups/}; zero crashes; clean \texttt{automation.log}. \\
+\hline
+\textbf{T6} & Live Failover ($<3$ min) & \texttt{shutdown} on \texttt{DIST-SW01 Gi0/1} \& \texttt{Gi1/0} during continuous ping & \texttt{DIST-SW02} assumes HSRP Active and OSPF reconverges in $< 180\text{ s}$ (target $< 15\text{ s}$). \\
+\hline
+\end{tabularx}
+\end{table}
+
+% --- Evidence Placeholders (Automatically render when screenshots are placed in figures/) ---
+\IncludeEvidenceImage{evidence_ospf_bgp.png}{Verification of OSPFv2/v3 neighbor adjacencies, eBGP peering with ISP AS~65000, and IPsec tunnel status across HQ, Hanoi, and Da Nang routers.}{Terminal output of show ip ospf neighbor, show ip bgp summary, and show crypto ipsec sa.}{fig:evidence_routing}
+
+\IncludeEvidenceImage{evidence_hsrp_failover.png}{Live HSRP and OSPF failover convergence test demonstrating traffic recovery in under 3 minutes after shutting down HCMC-DIST-SW01 uplinks.}{Continuous ICMP ping output and show standby brief before/after shutdown failover.}{fig:evidence_failover}
+
+\IncludeEvidenceImage{evidence_automation_run.png}{Execution of Python Netmiko auto\_provision.py showing automated configuration backup, VLAN provisioning, and log generation.}{Terminal output of auto\_provision.py, generated backup files, and automation.log.}{fig:evidence_automation}
+
+\subsection{Engineering Challenges \& Solutions}
+Integrating multi-campus routing, security isolation, and automated management across emulated Cisco vIOS/vIOS-L2 hardware surfaced four critical engineering challenges resolved during design:
+\begin{enumerate}[leftmargin=1.5em, itemsep=3pt]
+    \item \textbf{Hexadecimal Syntax Errors in Dual-Stack IPv6 Planning:} \emph{Challenge:} Initial schematic notation used descriptive tags (\texttt{ISP}, \texttt{VPN}) inside IPv6 prefixes, which Cisco IOS rejects because IPv6 accepts strictly hexadecimal digits (\texttt{0--9}, \texttt{A--F}). \emph{Solution:} Standardized WAN and tunnel IPv6 prefixes onto valid hexadecimal identifiers (\texttt{2001:DB8:FFFF::/48} for eBGP WAN and \texttt{2001:DB8:CAFE::/48} for GRE/IPsec tunnels) in \texttt{Specs/IP\_Addressing\_Schema.md}.
+    \item \textbf{Cross-Subnet Reachability for Centralized DHCP \& Netmiko Automation:} \emph{Challenge:} Placing the DHCP server at HQ (\texttt{10.10.10.50}) and running Python Netmiko across three campuses fails if Layer~2 switches lack return routing or if Layer~3 interfaces drop client DHCP broadcasts. \emph{Solution:} Mandated \texttt{ip default-gateway} on all four Layer~2 switches (\texttt{192.168.1.1}, \texttt{192.168.2.1}, \texttt{192.168.3.1}) and added \texttt{ip helper-address 10.10.10.50} on \texttt{HCMC-DIST-SW01/02 Vlan 20} as well as branch router sub-interfaces.
+    \item \textbf{NAT Overload Breaking Inter-Site VPN Routing \& Packet Fragmentation:} \emph{Challenge:} Applying naive \texttt{permit any} PAT ACLs translates private branch traffic into public WAN IPs before GRE/IPsec encapsulation, breaking private OSPF adjacencies; additionally, GRE+IPsec headers exceed the 1500-byte Ethernet MTU. \emph{Solution:} Placed explicit \texttt{deny} entries for \texttt{10.0.0.0/8} and \texttt{192.168.0.0/16} inside the NAT ACL and configured \texttt{ip mtu 1400} alongside \texttt{ip tcp adjust-mss 1360} on \texttt{Tunnel12} and \texttt{Tunnel13}.
+    \item \textbf{EVE-NG Emulation Stability \& Virtual Link Flapping:} \emph{Challenge:} Simultaneous booting of 10+ QEMU vIOS nodes exhausts hypervisor RAM, while QEMU scheduling jitter triggers false keepalive link-downs. \emph{Solution:} Standardized staggered batch booting (3--4 nodes per 30-second interval), shut down all unused switch ports inside \texttt{VLAN 999}, and applied \texttt{no keepalive} on internal HQ Layer~3 point-to-point links.
+\end{enumerate}
+
+\subsection{Conclusion}
+Through strict architectural decoupling of Layer~2 access domains, Layer~3 IGP underlays, eBGP WAN edge peering, and IPsec overlay tunnels, the redesigned TechViet Innovations (TVI) infrastructure eliminates single points of failure, enforces Zero Trust segmentation, guarantees VoIP/Video service levels, and enables repeatable Infrastructure-as-Code operations across Ho Chi Minh City, Hanoi, and Da Nang.
+
+% ==============================================================================
+% IEEE REFERENCES
+% ==============================================================================
+\clearpage
+\begin{thebibliography}{9}
+\bibitem{kurose2021}
+J. F. Kurose and K. W. Ross, \emph{Computer Networking: A Top-Down Approach}, 8th ed. Pearson, 2021.
+
+\bibitem{cisco_campus}
+Cisco Systems, \emph{Campus LAN and Wireless LAN Solution Design Guide (CVD)}, Cisco Validated Designs, 2024.
+
+\bibitem{rfc2328}
+J. Moy, ``OSPF Version 2,'' IETF RFC 2328 (STD 54), Apr. 1998.
+
+\bibitem{rfc5340}
+R. Coltun, D. Ferguson, J. Moy, and A. Lindem, ``OSPF for IPv6,'' IETF RFC 5340, Jul. 2008.
+
+\bibitem{rfc4271}
+Y. Rekhter, T. Li, and S. Hares, ``A Border Gateway Protocol 4 (BGP-4),'' IETF RFC 4271, Jan. 2006.
+
+\bibitem{rfc4301}
+S. Kent and K. Seo, ``Security Architecture for the Internet Protocol (IPsec),'' IETF RFC 4301, Dec. 2005.
+
+\bibitem{rfc2281}
+T. Li, B. Cole, P. Morton, and D. Li, ``Cisco Hot Standby Router Protocol (HSRP),'' IETF RFC 2281, Mar. 1998.
+
+\bibitem{netmiko}
+K. Byers, \emph{Netmiko: Multi-vendor library to simplify Paramiko SSH connections to network devices}, GitHub Repository. Available: \url{https://github.com/ktbyers/netmiko}.
+\end{thebibliography}

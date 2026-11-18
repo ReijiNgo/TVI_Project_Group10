@@ -20,9 +20,9 @@
     - **Chặn (`deny ip`)** truy cập vào tất cả mạng nội bộ TVI (`10.10.0.0/16`, `10.20.0.0/16`, `10.30.0.0/16`, `192.168.0.0/16`).
     - **Cho phép (`permit`)** truy cập DHCP/DNS cần thiết (nếu cấp từ server) và đi Internet (`8.8.8.8` / `any`).
   - Tại **HQ & Đà Nẵng**: Viết ACL bảo vệ phân vùng `EXEC_FINANCE` (`10.10.10.0/24`) và `LOGISTICS_OPS` (`10.30.30.0/24`).
-- [ ] **Layer 2 Security (Port Security, DHCP Snooping, DAI) trên các Switch Access:**
-  - `switchport port-security` (giới hạn `maximum 2`, `mac-address sticky`, `violation restrict`).
-  - `ip dhcp snooping` + `ip dhcp snooping vlan 10,20,30,50` + `ip dhcp snooping trust` trên các cổng Trunk uplink.
+- [ ] **Layer 2 Security (Port Security, DHCP Snooping, DAI) trên các Switch Access (`vIOS-L2` 16 ports):**
+  - `switchport port-security` (giới hạn `maximum 2`, `mac-address sticky`, `violation restrict`) trên các cổng Access người dùng (`HCMC-CORE-SW01 Gi0/3, Gi1/0-1`; `HANOI-RND-SW01/02 Gi1/0-1, Gi1/2`; `DANANG-LOG-SW01 Gi1/0-1`; chú ý không chặn nhầm cổng Server `Gi0/0` hay Automation Node `Gi1/3` nếu cắm nhiều VM).
+  - `ip dhcp snooping` + `ip dhcp snooping vlan 10,20,30,50` + `ip dhcp snooping trust` trên các cổng Trunk uplink (`Gi0/1`, `Gi0/2`, `Port-channel 1`...).
   - `ip arp inspection vlan 10,20,30,50` + `ip arp inspection trust` trên các cổng Trunk uplink.
 - [ ] **Device Hardening & SSHv2 trên toàn bộ 10 thiết bị (theo Trang 18 & 20 Đề bài):**
   - `ip domain name tvi.lab`

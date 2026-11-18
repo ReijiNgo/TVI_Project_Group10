@@ -1,0 +1,92 @@
+% ==============================================================================
+% SECTION 3: HIERARCHICAL IP ADDRESSING & SUBNETTING STRATEGY (STEP 2)
+% ==============================================================================
+\section{Hierarchical IP Addressing \& Subnetting Strategy (Step 2)}
+
+\subsection{VLSM \& Dual-Stack Design Methodology}
+To prevent IP exhaustion while eliminating wasted address space on point-to-point infrastructure links, TVI adopts \textbf{Variable Length Subnet Masking (VLSM)} for IPv4 alongside hierarchical \textbf{IPv6 Dual-Stack} Global Unicast Addressing (GUA). Subnet capacities are strictly sized according to:
+\[
+    \text{Usable IPv4 Hosts} = 2^{(32 - \text{Prefix})} - 2
+\]
+Key sizing decisions follow four architectural rules:
+\begin{enumerate}[leftmargin=1.5em, itemsep=2pt]
+    \item \textbf{Right-Sized Engineering \& Guest Subnets:} Large R\&D engineering departments at HQ (\texttt{\textasciitilde 400} hosts) and Hanoi (\texttt{\textasciitilde 350} hosts) receive \texttt{/23} blocks (\texttt{510} usable hosts), while Hanoi Guest Wi-Fi (\texttt{\textasciitilde 100} concurrent guests) is constrained to a \texttt{/25} block (\texttt{126} usable hosts). Executive/Finance (\texttt{\textasciitilde 150} hosts) and Da Nang Logistics (\texttt{\textasciitilde 200} endpoints) receive \texttt{/24} blocks (\texttt{254} usable hosts).
+    \item \textbf{Zero-Waste Point-to-Point Links (\texttt{/30}):} Every router-to-router WAN link, HQ Layer~3 uplink, and GRE/IPsec tunnel is allocated an exact \texttt{/30} subnet (\texttt{2} usable host addresses).
+    \item \textbf{Dedicated Out-of-Band Management (\texttt{192.168.x.0/24}):} Regional management VLANs (\texttt{VLAN 99}) use deterministic \texttt{/24} blocks separated from corporate \texttt{10.x.0.0/16} data planes to simplify Netmiko inventory targeting and management ACLs.
+    \item \textbf{Hierarchical IPv6 Alignment:} Every IPv4 subnet maps 1-to-1 onto a dedicated \texttt{/64} IPv6 prefix carved from its regional \texttt{/48} site block (\texttt{2001:DB8:10::/48} for HQ, \texttt{2001:DB8:20::/48} for Hanoi, \texttt{2001:DB8:30::/48} for Da Nang), using valid hexadecimal identifiers (\texttt{2001:DB8:FFFF::/48} for WAN links and \texttt{2001:DB8:CAFE::/48} for VPN tunnels).
+\end{enumerate}
+
+\subsection{Complete IPv4 VLSM \& IPv6 Dual-Stack Allocation Table}
+Table~\ref{tab:ip_allocation} documents all 15 non-overlapping subnets across TVI's three campuses, internal Layer~3 links, ISP WAN links, and IPsec overlay tunnels.
+
+\begin{table}[H]
+\centering
+\caption{Complete IPv4 VLSM and IPv6 Dual-Stack Addressing Schema.}
+\label{tab:ip_allocation}
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabularx}{\textwidth}{|p{1.25cm}|p{2.2cm}|p{0.85cm}|p{2.0cm}|p{2.15cm}|p{1.85cm}|X|}
+\hline
+\textbf{Site} & \textbf{VLAN / Link} & \textbf{Need} & \textbf{IPv4 CIDR} & \textbf{Usable Range} & \textbf{Gateway / Peer} & \textbf{IPv6 Dual-Stack (\texttt{/64})} \\
+\hline
+\textbf{HQ} & \texttt{VLAN 20} (\texttt{RND\_ENG}) & \textasciitilde 400 & \texttt{10.10.20.0/23} & \texttt{.20.1--.21.254} & \texttt{10.10.20.1} (HSRP) & \texttt{2001:DB8:10:20::/64} \\
+\hline
+\textbf{HQ} & \texttt{VLAN 10} (\texttt{EXEC\_FIN}) & \textasciitilde 150 & \texttt{10.10.10.0/24} & \texttt{.10.1--.10.254} & \texttt{10.10.10.1} (HSRP) & \texttt{2001:DB8:10:10::/64} \\
+\hline
+\textbf{HQ} & \texttt{VLAN 99} (\texttt{MGMT}) & \textasciitilde 50 & \texttt{192.168.1.0/24} & \texttt{.1.1--.1.254} & \texttt{192.168.1.1} (HSRP) & \texttt{2001:DB8:10:99::/64} \\
+\hline
+\textbf{Hanoi} & \texttt{VLAN 20} (\texttt{RND\_ENG}) & \textasciitilde 350 & \texttt{10.20.20.0/23} & \texttt{.20.1--.21.254} & \texttt{10.20.20.1} (RoaS) & \texttt{2001:DB8:20:20::/64} \\
+\hline
+\textbf{Hanoi} & \texttt{VLAN 50} (\texttt{GUEST}) & \textasciitilde 100 & \texttt{10.20.50.0/25} & \texttt{.50.1--.50.126} & \texttt{10.20.50.1} (RoaS) & \texttt{2001:DB8:20:50::/64} \\
+\hline
+\textbf{Hanoi} & \texttt{VLAN 99} (\texttt{MGMT}) & \textasciitilde 30 & \texttt{192.168.2.0/24} & \texttt{.2.1--.2.254} & \texttt{192.168.2.1} (RoaS) & \texttt{2001:DB8:20:99::/64} \\
+\hline
+\textbf{Da Nang} & \texttt{VLAN 30} (\texttt{LOG\_OPS}) & \textasciitilde 200 & \texttt{10.30.30.0/24} & \texttt{.30.1--.30.254} & \texttt{10.30.30.1} (RoaS) & \texttt{2001:DB8:30:30::/64} \\
+\hline
+\textbf{Da Nang} & \texttt{VLAN 99} (\texttt{MGMT}) & \textasciitilde 20 & \texttt{192.168.3.0/24} & \texttt{.3.1--.3.254} & \texttt{192.168.3.1} (RoaS) & \texttt{2001:DB8:30:99::/64} \\
+\hline
+\textbf{HQ L3} & \texttt{EDGE} $\leftrightarrow$ \texttt{DIST01} & 2 & \texttt{10.10.254.0/30} & \texttt{.1} (RTR), \texttt{.2} (SW1) & OSPF P2P Area 0 & \texttt{2001:DB8:10:2541::/64} \\
+\hline
+\textbf{HQ L3} & \texttt{EDGE} $\leftrightarrow$ \texttt{DIST02} & 2 & \texttt{10.10.254.4/30} & \texttt{.5} (RTR), \texttt{.6} (SW2) & OSPF P2P Area 0 & \texttt{2001:DB8:10:2542::/64} \\
+\hline
+\textbf{WAN} & \texttt{HCMC} $\leftrightarrow$ \texttt{ISP} & 2 & \texttt{203.0.113.0/30} & \texttt{.1} (HQ), \texttt{.2} (ISP) & eBGP 65001--65000 & \texttt{2001:DB8:FFFF:1::/64} \\
+\hline
+\textbf{WAN} & \texttt{HANOI} $\leftrightarrow$ \texttt{ISP} & 2 & \texttt{203.0.113.4/30} & \texttt{.5} (HN), \texttt{.6} (ISP) & eBGP 65002--65000 & \texttt{2001:DB8:FFFF:2::/64} \\
+\hline
+\textbf{WAN} & \texttt{DANANG} $\leftrightarrow$ \texttt{ISP} & 2 & \texttt{203.0.113.8/30} & \texttt{.9} (DN), \texttt{.10} (ISP) & eBGP 65003--65000 & \texttt{2001:DB8:FFFF:3::/64} \\
+\hline
+\textbf{Overlay} & \texttt{Tunnel12} (HQ--HN) & 2 & \texttt{172.16.12.0/30} & \texttt{.1} (HQ), \texttt{.2} (HN) & GRE over IPsec & \texttt{2001:DB8:CAFE:12::/64} \\
+\hline
+\textbf{Overlay} & \texttt{Tunnel13} (HQ--DN) & 2 & \texttt{172.16.13.0/30} & \texttt{.1} (HQ), \texttt{.2} (DN) & GRE over IPsec & \texttt{2001:DB8:CAFE:13::/64} \\
+\hline
+\end{tabularx}
+\end{table}
+
+\subsection{Regional Supernet Summarization \& 10,000+ Endpoint Scalability}
+To keep global routing tables minimal and preserve deterministic contiguous blocks for TVI's projected expansion to \textbf{4,000+ staff and 10,000+ IoT endpoints by 2030}, each region is assigned a contiguous \texttt{/16} IPv4 supernet (\texttt{65,534} usable hosts per campus) and a \texttt{/48} IPv6 prefix. Border routers advertise summarized supernets rather than fragmented campus subnets, as detailed in Table~\ref{tab:supernet_scaling}.
+
+\begin{table}[H]
+\centering
+\caption{Regional Supernet Route Summarization and 2026--2030 Expansion Capacity.}
+\label{tab:supernet_scaling}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\textwidth}{|p{2.0cm}|p{1.05cm}|p{2.5cm}|p{1.25cm}|p{2.95cm}|X|}
+\hline
+\textbf{Region} & \textbf{BGP AS} & \textbf{Supernet Summary (IPv4 / IPv6)} & \textbf{Total IPv4 Capacity} & \textbf{Active Lab Subnets} & \textbf{Reserved Expansion Blocks (2026--2030)} \\
+\hline
+\textbf{TP.HCM (HQ)} & \texttt{65001} & \texttt{10.10.0.0/16} \newline \texttt{2001:DB8:10::/48} & \texttt{65,534} hosts & \texttt{10.10.10.0/24}, \texttt{10.10.20.0/23}, \texttt{10.10.254.0/29} & \texttt{10.10.32.0/19} (\texttt{8,190} campus hosts); \newline \texttt{10.10.64.0/18} (\texttt{16,382} Data Center endpoints) \\
+\hline
+\textbf{Hà Nội (R\&D)} & \texttt{65002} & \texttt{10.20.0.0/16} \newline \texttt{2001:DB8:20::/48} & \texttt{65,534} hosts & \texttt{10.20.20.0/23}, \texttt{10.20.50.0/25} & \texttt{10.20.32.0/20} (\texttt{4,094} AI/GPU nodes); \newline \texttt{10.20.64.0/19} (\texttt{8,190} future R\&D engineers) \\
+\hline
+\textbf{Đà Nẵng (Hub)} & \texttt{65003} & \texttt{10.30.0.0/16} \newline \texttt{2001:DB8:30::/48} & \texttt{65,534} hosts & \texttt{10.30.30.0/24} & \texttt{10.30.64.0/18} (\texttt{16,382} AGV, RFID \& warehouse IoT sensors) \\
+\hline
+\end{tabularx}
+\end{table}
+
+\subsection{Centralized Infrastructure Services \& Loopback Identifiers}
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+    \item \textbf{Centralized DHCP, DNS \& NTP Server (\texttt{10.10.10.50}):} Placed inside HQ \texttt{VLAN 10}. Remote user subnets (\texttt{HQ VLAN 20}, \texttt{Hanoi Gi0/1.20 \& Gi0/1.50}, and \texttt{Da Nang Gi0/1.30}) forward DHCP Discover broadcasts via \texttt{ip helper-address 10.10.10.50}.
+    \item \textbf{OSPF Loopback0 Router-IDs (\texttt{/32}):} \texttt{HCMC-EDGE-RTR01} (\texttt{10.255.255.1}), \texttt{HCMC-DIST-SW01} (\texttt{10.255.255.11}), \texttt{HCMC-DIST-SW02} (\texttt{10.255.255.12}), \texttt{HANOI-RND-RTR01} (\texttt{10.255.255.2}), and \texttt{DANANG-LOG-RTR01} (\texttt{10.255.255.3}).
+    \item \textbf{Layer~2 Switch Management Default Gateways:} Cross-WAN SSHv2 reachability from the HQ automation host is ensured via \texttt{ip default-gateway}: \texttt{192.168.1.1} on \texttt{HCMC-CORE-SW01}, \texttt{192.168.2.1} on \texttt{HANOI-RND-SW01} and \texttt{HANOI-RND-SW02}, and \texttt{192.168.3.1} on \texttt{DANANG-LOG-SW01}.
+\end{itemize}

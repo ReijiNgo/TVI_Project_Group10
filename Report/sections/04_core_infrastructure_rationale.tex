@@ -1,0 +1,86 @@
+% ==============================================================================
+% SECTION 4: CORE INFRASTRUCTURE & TECHNOLOGY RATIONALE (STEPS 3 - 6)
+% ==============================================================================
+\section{Core Infrastructure \& Protocol Engineering Rationale (Steps 3--6)}
+
+\subsection{Layer 2 Switching, LACP EtherChannel \& Rapid-PVST+ (Step 3)}
+\paragraph{Engineering Rationale.}
+TVI's legacy flat LAN suffered from broadcast storms and slow convergence after link failures. Our Layer~2 design resolves both issues through three coordinated mechanisms:
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+    \item \textbf{Deterministic Rapid-PVST+ Root Placement:} Classic IEEE 802.1D STP incurs 30--50~second forwarding delays. Enabling \texttt{spanning-tree mode rapid-pvst} drops link failover to sub-second RSTP proposals. Crucially, \texttt{HCMC-DIST-SW01} is explicitly forced as \texttt{root primary} and \texttt{HCMC-DIST-SW02} as \texttt{root secondary} across \texttt{VLAN 10, 20, 99} so the STP forwarding tree aligns identically with the HSRP Active gateway, preventing suboptimal cross-link hairpinning.
+    \item \textbf{Open-Standard LACP Link Aggregation (\texttt{Port-channel 1}):} Rather than proprietary PAgP or static \texttt{on} modes, \texttt{Gi0/2--Gi0/3} between \texttt{HCMC-DIST-SW01/02} and \texttt{HANOI-RND-SW01/02} use \texttt{channel-group 1 mode active} (IEEE 802.3ad LACP), doubling inter-switch trunk bandwidth and eliminating single-cable outages.
+    \item \textbf{Access Port Hardening \& Blackhole Isolation:} End-host ports enable \texttt{spanning-tree portfast} and \texttt{bpduguard enable} to avoid 30-second DHCP timeouts and block rogue switches, while all unused ports reside in \texttt{VLAN 999 (BLACKHOLE)} in \texttt{shutdown} state.
+\end{itemize}
+
+\begin{lstlisting}[style=CiscoCLI, caption={Reference Layer 2 Trunking, LACP, and Rapid-PVST+ Baseline (HQ Distribution SW01).}]
+vlan 10
+ name EXEC_FINANCE
+vlan 20
+ name RND_ENGINEERING
+vlan 99
+ name MANAGEMENT
+vlan 999
+ name BLACKHOLE
+!
+spanning-tree mode rapid-pvst
+spanning-tree vlan 10,20,99 root primary
+!
+interface range GigabitEthernet0/2 - 3
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ channel-group 1 mode active
+!
+interface Port-channel1
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,99
+\end{lstlisting}
+
+\subsection{Gateway Redundancy (HSRP) \& Centralized DHCP Relay (Step 4)}
+\paragraph{Engineering Rationale.}
+If a single distribution switch fails at Ho Chi Minh City HQ, 2,000+ users would lose all routed access. Deploying \textbf{HSRP} across \texttt{HCMC-DIST-SW01} (\texttt{Priority 110}, \texttt{preempt}) and \texttt{HCMC-DIST-SW02} (\texttt{Priority 100}) provides transparent virtual gateways (\texttt{10.10.10.1}, \texttt{10.10.20.1}, \texttt{192.168.1.1}). Preemption ensures traffic automatically fails back to \texttt{DIST-SW01} (the STP Root Bridge) once repaired. Because centralized DHCP (\texttt{10.10.10.50}) resides in \texttt{VLAN 10}, Layer~3 boundaries block client DHCP broadcasts; configuring \texttt{ip helper-address 10.10.10.50} on \texttt{HQ Vlan 20}, \texttt{Hanoi Gi0/1.20/50}, and \texttt{Da Nang Gi0/1.30} relays requests as unicast packets across the OSPF/IPsec fabric.
+
+\begin{lstlisting}[style=CiscoCLI, caption={HSRP Active Gateway and DHCP Relay Configuration on HCMC-DIST-SW01.}]
+interface Vlan20
+ description Corporate R&D Engineering Gateway
+ ip address 10.10.20.2 255.255.254.0
+ ipv6 address 2001:DB8:10:20::2/64
+ ip helper-address 10.10.10.50
+ standby 20 ip 10.10.20.1
+ standby 20 priority 110
+ standby 20 preempt
+\end{lstlisting}
+
+\subsection{Underlay IGP (OSPFv2/v3), eBGP WAN \& GRE over IPsec VPN (Steps 5--6)}
+\paragraph{Engineering Rationale.}
+TVI decouples internal campus reachability from external provider routing:
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+    \item \textbf{Dual-Stack Underlay (\texttt{OSPFv2} \& \texttt{OSPFv3 Area 0}):} Chosen over RIP/EIGRP for multi-vendor interoperability, fast SPF convergence, and native support for both IPv4 and IPv6. Deterministic \texttt{Loopback0} Router-IDs (\texttt{10.255.255.x}) stabilize neighbor relationships, while \texttt{passive-interface} suppresses OSPF Hello traffic on user VLANs. On virtualized vIOS point-to-point links, \texttt{no keepalive} prevents spurious link-flap events.
+    \item \textbf{Overlay Routing (\texttt{eBGP AS 65000--65003}) \& Summarization:} Each campus establishes eBGP peering with \texttt{ISP-CORE-RTR01} (\texttt{AS 65000}) over \texttt{203.0.113.x/30} to support direct local Internet breakout and learn \texttt{8.8.8.8/32} without backhauling SaaS traffic through HQ.
+    \item \textbf{Encrypted Inter-Site Fabric (\texttt{GRE over IPsec}):} Pure IPsec crypto maps cannot carry multicast OSPF Hellos or IPv6 traffic natively. Encapsulating GRE tunnels (\texttt{Tunnel12} and \texttt{Tunnel13}) inside IPsec Transport/Tunnel profiles (\texttt{AES-256}, \texttt{SHA-256}) provides encrypted virtual point-to-point links capable of running \texttt{OSPFv2/OSPFv3} across all three campuses. Setting \texttt{ip mtu 1400} and \texttt{ip tcp adjust-mss 1360} prevents GRE+IPsec encapsulation overhead from triggering WAN packet fragmentation.
+\end{itemize}
+
+\begin{lstlisting}[style=CiscoCLI, caption={GRE over IPsec VPN Profile and eBGP Peering Pattern on HCMC-EDGE-RTR01.}]
+crypto isakmp policy 10
+ encr aes 256
+ hash sha256
+ authentication pre-share
+ group 14
+!
+crypto ipsec transform-set TVI-TS esp-aes 256 esp-sha256-hmac
+crypto ipsec profile TVI-IPSEC-PROF
+ set transform-set TVI-TS
+!
+interface Tunnel12
+ ip address 172.16.12.1 255.255.255.252
+ ipv6 address 2001:DB8:CAFE:12::1/64
+ ip mtu 1400
+ ip tcp adjust-mss 1360
+ tunnel source GigabitEthernet0/0
+ tunnel destination 203.0.113.5
+ tunnel protection ipsec profile TVI-IPSEC-PROF
+!
+router bgp 65001
+ bgp router-id 10.255.255.1
+ neighbor 203.0.113.2 remote-as 65000
+\end{lstlisting}

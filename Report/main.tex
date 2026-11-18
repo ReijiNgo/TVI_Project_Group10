@@ -1,0 +1,38 @@
+\documentclass[11pt,a4paper]{article}
+
+% ==============================================================================
+% REPORT METADATA (USED IN HEADER & FOOTER)
+% ==============================================================================
+\newcommand{\reportCourse}{Computer Networks (CO3093)}
+\newcommand{\reportTitleShort}{Assignment 2}
+
+% ==============================================================================
+% MODULAR PREAMBLE CONFIGURATION
+% ==============================================================================
+\input{config/preamble.tex}
+
+% ==============================================================================
+% DOCUMENT BODY
+% ==============================================================================
+\begin{document}
+
+% --- Cover Page & Team Roster ---
+\input{sections/00_title_page.tex}
+
+% --- Table of Contents ---
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+
+% --- Main Content (Arabic Page Numbering starting at 1) ---
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{sections/01_executive_summary.tex}
+\input{sections/02_architecture_topology.tex}
+\input{sections/03_ip_addressing_schema.tex}
+\input{sections/04_core_infrastructure_rationale.tex}
+\input{sections/05_security_qos_automation.tex}
+\input{sections/06_testing_verification_conclusion.tex}
+
+\end{document}

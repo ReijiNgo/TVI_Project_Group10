@@ -4,7 +4,7 @@
 - **File soạn thảo chính:** `Draft_Modules/member1_switching_dhcp/member1_switching_dhcp_draft.cfg`
 - **Tài liệu tham chiếu bắt buộc:** [`Specs/IP_Addressing_Schema.md`](../../Specs/IP_Addressing_Schema.md)
 
-> **Lưu ý Zero-Conflict:** Tuyệt đối giữ nguyên toàn bộ Hostname, số hiệu VLAN, tên cổng (`Gi0/x`, `Fa0/x`) và địa chỉ IPv4/IPv6 đã chốt trong `Specs/IP_Addressing_Schema.md` để Leader ghép bài không bị xung đột.
+> **Lưu ý Zero-Conflict:** Tuyệt đối giữ nguyên toàn bộ Hostname, số hiệu VLAN, tên cổng 16-port trên Switch `vIOS-L2` (`Gi0/0-3`, `Gi1/0-3`, `Gi2/0-3`, `Gi3/0-3`) và địa chỉ IPv4/IPv6 đã chốt trong `Specs/IP_Addressing_Schema.md` để Leader ghép bài không bị xung đột.
 
 ---
 
@@ -18,8 +18,8 @@
   - `VLAN 50`: `GUEST_WIFI` (HN)
   - `VLAN 99`: `MANAGEMENT` (3 miền)
   - `VLAN 999`: `BLACKHOLE` (Cô lập toàn bộ cổng thừa và `shutdown`)
-- [ ] **802.1Q Trunking:** Cấu hình `switchport trunk encapsulation dot1q` (trên L3 Switch) và `switchport mode trunk` cho các đường nối liên Switch và từ Switch lên Router (HN & ĐN).
-- [ ] **Access Ports & PortFast:** Gán đúng dải cổng `Fa0/x` vào VLAN tương ứng theo `Specs/IP_Addressing_Schema.md`, bật `spanning-tree portfast` và `bpduguard enable` cho các cổng Access. Đưa tất cả các cổng không dùng vào `VLAN 999` và `shutdown`.
+- [ ] **802.1Q Trunking:** Cấu hình `switchport trunk encapsulation dot1q` (trên L3 Switch) và `switchport mode trunk` cho các đường nối liên Switch (`Gi1/0` trên DIST <-> `Gi0/1`, `Gi0/2` trên CORE) và từ Switch lên Router (HN & ĐN: `Gi0/1`).
+- [ ] **Access Ports & PortFast:** Gán đúng dải cổng Access (`Gi0/0`, `Gi0/3`, `Gi1/0-1/3` tùy thiết bị) vào VLAN tương ứng theo `Specs/IP_Addressing_Schema.md`, bật `spanning-tree portfast` và `bpduguard enable` cho các cổng Access PC/AP. Đưa tất cả các cổng dư (`Gi1/2`, `Gi2/0-3`, `Gi3/0-3`...) vào `VLAN 999` và `shutdown`.
 - [ ] **LACP EtherChannel (`Port-channel 1`):** Bó dây dùng chuẩn mở LACP (`channel-group 1 mode active`) trên cặp `Gi0/2` & `Gi0/3` giữa:
   - `HCMC-DIST-SW01` <-> `HCMC-DIST-SW02`
   - `HANOI-RND-SW01` <-> `HANOI-RND-SW02`
