@@ -1,0 +1,251 @@
+% ==============================================================================
+% PREAMBLE CONFIGURATION (CLEAN & OPTIMIZED)
+% ==============================================================================
+
+% ------------------------- 1. FONT & TIẾNG VIỆT ------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}        % Hỗ trợ hiển thị dấu tiếng Việt chuẩn xác
+\usepackage[english]{babel}     % Đổi thành [vietnamese]{babel} nếu viết báo cáo tiếng Việt
+
+% ------------------------- 2. TRANG & CANH LỀ --------------------------------
+\usepackage{geometry}
+\geometry{
+    a4paper,
+    left=25mm,
+    right=20mm,
+    top=25mm,
+    bottom=25mm
+}
+\setlength{\parindent}{0pt}     % Bỏ thụt đầu dòng (dạng đoạn văn block hiện đại)
+\setlength{\parskip}{6pt}       % Khoảng cách giữa các đoạn văn
+
+% ------------------------- 3. TOÁN HỌC & ĐỊNH LÝ -----------------------------
+\usepackage{amsmath, amssymb, amsthm}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{property}{Property}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{corollary}[proposition]{Corollary}
+\newtheorem{lemma}[proposition]{Lemma}
+
+% ------------------------- 4. BẢNG BIỂU & ĐỒ HỌA ------------------------------
+\usepackage{graphicx}
+\graphicspath{{figures/}}       % Tự động tìm ảnh trong thư mục figures/
+\usepackage{booktabs}           % Kẻ bảng đẹp chuyên nghiệp (\toprule, \midrule)
+\usepackage{tabularx}           % Bảng tự co giãn cột X
+\usepackage{multirow}           % Gộp dòng trong bảng
+\usepackage{multicol}           % Chia nhiều cột văn bản khi cần
+\usepackage{caption}
+\usepackage{subcaption}         % Đặt nhiều hình con (subfigure) cạnh nhau
+\usepackage{tikz}
+\usetikzlibrary{calc, arrows.meta, backgrounds}
+
+% ------------------------- 5. THUẬT TOÁN (ALGORITHM) -------------------------
+\usepackage[linesnumbered, ruled, vlined, commentsnumbered]{algorithm2e}
+
+% ------------------------- 6. CHÈN MÃ NGUỒN (LISTINGS) ------------------------
+\usepackage[table]{xcolor}
+\usepackage{listings}
+
+\definecolor{codeGreen}{rgb}{0,0.6,0}
+\definecolor{codeGray}{rgb}{0.5,0.5,0.5}
+\definecolor{codePurple}{rgb}{0.58,0,0.82}
+\definecolor{codeBackground}{rgb}{0.97,0.97,0.97}
+
+\lstdefinestyle{CppStyle}{
+    backgroundcolor=\color{codeBackground},
+    commentstyle=\color{codeGreen},
+    keywordstyle=\color{blue}\bfseries,
+    numberstyle=\tiny\color{codeGray},
+    stringstyle=\color{codePurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=7pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    frame=single,
+    rulecolor=\color{black!15},
+    language=C++
+}
+\lstset{style=CppStyle}
+
+% ------------------------- 7. LIÊN KẾT & MỤC LỤC -----------------------------
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!80!black,
+    citecolor=blue!80!black,
+    urlcolor=blue!80!black
+}
+
+% ------------------------- 8. HEADER & FOOTER --------------------------------
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\setlength{\headheight}{45pt}
+\pagestyle{fancy}
+\fancyhf{}
+
+% Macro kiểm tra ảnh an toàn (tránh vỡ layout nếu thiếu file logo)
+% Macro kiểm tra ảnh: tự quét cả thư mục gốc và thư mục figures/
+\newcommand{\includesafe}[2][width=\linewidth]{%
+    \IfFileExists{#2}{%
+        \includegraphics[#1]{#2}%
+    }{%
+        \IfFileExists{figures/#2}{%
+            \includegraphics[#1]{figures/#2}%
+        }{%
+            \begin{tikzpicture}
+                \node[draw=red!60, fill=red!5, thick, dashed, inner sep=4pt] {
+                    \textbf{\scriptsize\color{red!80!black}[Missing: \texttt{\detokenize{#2}}]}
+                };
+            \end{tikzpicture}%
+        }%
+    }%
+}
+
+% Header chuẩn hóa dùng minipage (không bị lệch như môi trường picture cũ)
+\lhead{
+    \begin{minipage}{0.12\textwidth}
+        \includesafe[height=1.1cm]{logo_bk.png}
+    \end{minipage}
+    \begin{minipage}{0.85\textwidth}
+        \textbf{\small HO CHI MINH CITY UNIVERSITY OF TECHNOLOGY}\\
+        \textsf{\footnotesize FACULTY OF COMPUTER SCIENCE AND ENGINEERING}
+    \end{minipage}
+}
+
+\lfoot{\footnotesize \reportCourse\ -- \reportTitleShort}
+\rfoot{\footnotesize Page \thepage\ of \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% ------------------------- 9. CẤP ĐỘ MỤC 4 (SUBSUBSECTION) ------------------
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{3}
+\makeatletter
+\newcounter{subsubsubsection}[subsubsection]
+\renewcommand\thesubsubsubsection{\thesubsubsection.\alph{subsubsubsection}}
+\newcommand\subsubsubsection{\@startsection{subsubsubsection}{4}{\z@}%
+    {-3.25ex\@plus -1ex \@minus -.2ex}%
+    {1.5ex \@plus .2ex}%
+    {\normalfont\normalsize\bfseries}}
+\newcommand*\l@subsubsubsection{\@dottedtocline{4}{10.0em}{4.1em}}
+\makeatother
+
+% --- BỔ SUNG CÁC GÓI & THƯ VIỆN CHO 5 CHAPTERS ---
+\usepackage{float}
+\usepackage{enumitem}
+\usetikzlibrary{arrows.meta, positioning, calc, fit, backgrounds, shapes.geometric}
+
+% --- BẢNG MÀU DÙNG TRONG CÁC SƠ ĐỒ TIKZ & BẢNG BIỂU ---
+\definecolor{PrimaryBlue}{HTML}{1E40AF}
+\definecolor{AccentBlue}{HTML}{3B82F6}
+\definecolor{SoftBlue}{HTML}{EFF6FF}
+\definecolor{SuccessGreen}{HTML}{059669}
+\definecolor{SoftGreen}{HTML}{ECFDF5}
+\definecolor{WarnAmber}{HTML}{D97706}
+\definecolor{SoftAmber}{HTML}{FFFBEB}
+\definecolor{SlateDark}{HTML}{0F172A}
+\definecolor{SlateMuted}{HTML}{475569}
+\definecolor{BorderGray}{HTML}{CBD5E1}
+\definecolor{CodeBg}{HTML}{F8FAFC}
+
+% --- MACRO CHÈN ẢNH KẾT QUẢ THỰC NGHIỆM (ĐÃ FIX TỰ QUÉT THƯ MỤC figures/) ---
+\newcommand{\IncludeEvidenceImage}[4]{%
+  \begin{figure}[H]
+    \centering
+    \IfFileExists{#1}{%
+      \setlength{\fboxsep}{0pt}%
+      \setlength{\fboxrule}{0.6pt}%
+      \fcolorbox{BorderGray}{white}{\includegraphics[width=0.95\textwidth]{#1}}%
+    }{%
+      \IfFileExists{figures/#1}{%
+        \setlength{\fboxsep}{0pt}%
+        \setlength{\fboxrule}{0.6pt}%
+        \fcolorbox{BorderGray}{white}{\includegraphics[width=0.95\textwidth]{figures/#1}}%
+      }{%
+        \begin{tikzpicture}
+          \node[draw=AccentBlue, dashed, line width=1pt, fill=SoftBlue,
+                rounded corners=6pt, text width=0.88\textwidth, minimum height=4.4cm,
+                align=center, inner sep=12pt] {
+            \textbf{\color{PrimaryBlue}[ Screenshot Placeholder: \texttt{\detokenize{#1}} ]}\\[5pt]
+            \small\color{SlateMuted} Place file \texttt{\detokenize{#1}} in the \texttt{figures/} folder to render this figure.\\[4pt]
+            \footnotesize\itshape\color{SlateMuted} Expected content: #3
+          };
+        \end{tikzpicture}%
+      }%
+    }%
+    \caption{#2}
+    \label{#4}
+  \end{figure}%
+}
+
+% --- Cấu hình màu & khung hộp Code Excerpt ---
+\definecolor{CodeBg}{HTML}{FDF6F6}
+\definecolor{CodeKw}{HTML}{0550AE}
+\definecolor{CodeCom}{HTML}{57606A}
+\lstdefinestyle{RelayPython}{
+  language=Python,
+  backgroundcolor=\color{CodeBg},
+  basicstyle=\ttfamily\footnotesize\color{SlateDark},
+  keywordstyle=\bfseries\color{CodeKw},
+  stringstyle=\color{SuccessGreen!85!black},
+  commentstyle=\itshape\color{CodeCom},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  frame=single,
+  rulecolor=\color{BorderGray},
+  framesep=6pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  aboveskip=6pt,
+  belowskip=6pt,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+% --- Cấu hình khung Cisco IOS CLI & YAML ---
+\lstdefinestyle{CiscoCLI}{
+  backgroundcolor=\color{CodeBg},
+  basicstyle=\ttfamily\footnotesize\color{SlateDark},
+  keywordstyle=\bfseries\color{PrimaryBlue},
+  commentstyle=\itshape\color{CodeCom},
+  morecomment=[l]{!},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  frame=single,
+  rulecolor=\color{BorderGray},
+  framesep=6pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  aboveskip=6pt,
+  belowskip=6pt,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\lstdefinestyle{YamlStyle}{
+  backgroundcolor=\color{SoftBlue},
+  basicstyle=\ttfamily\footnotesize\color{SlateDark},
+  commentstyle=\itshape\color{CodeCom},
+  morecomment=[l]{\#},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{BorderGray},
+  framesep=6pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  aboveskip=6pt,
+  belowskip=6pt,
+  columns=fullflexible,
+  keepspaces=true
+}

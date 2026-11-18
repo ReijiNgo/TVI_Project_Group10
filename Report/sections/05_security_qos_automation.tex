@@ -1,0 +1,86 @@
+% ==============================================================================
+% SECTION 5: SECURITY HARDENING, QOS & AUTOMATION STRATEGY (STEPS 7 - 9)
+% ==============================================================================
+\section{Security Hardening, QoS \& Programmable Automation (Steps 7--9)}
+
+\subsection{Edge NAT/PAT, ACL Micro-Segmentation \& Layer 2 Defense (Step 7)}
+\paragraph{Zero Trust Access Control \& NAT Exemption.}
+Every campus edge router performs \textbf{PAT/NAT Overload} on \texttt{Gi0/0} (\texttt{ip nat outside}) so internal users access Internet services directly. Crucially, the NAT access list explicitly denies inter-campus traffic (\texttt{10.10.0.0/16}, \texttt{10.20.0.0/16}, \texttt{10.30.0.0/16}, \texttt{192.168.0.0/16}) before permitting Internet translation, preventing NAT from breaking \texttt{Tunnel12}/\texttt{Tunnel13} private routing. At Hanoi, an inbound Extended ACL on \texttt{Gi0/1.50} enforces Zero Trust isolation for \texttt{GUEST\_WIFI} (\texttt{10.20.50.0/25}):
+
+\begin{lstlisting}[style=CiscoCLI, caption={Extended ACL Isolating Hanoi Guest Wi-Fi (VLAN 50) from Corporate Networks.}]
+ip access-list extended ACL_GUEST_ISOLATION
+ remark Allow DHCP/DNS relay reachability if needed, block all RFC1918 Corporate LANs
+ deny   ip 10.20.50.0 0.0.0.127 10.0.0.0 0.255.255.255
+ deny   ip 10.20.50.0 0.0.0.127 172.16.0.0 0.15.255.255
+ deny   ip 10.20.50.0 0.0.0.127 192.168.0.0 0.0.255.255
+ permit ip 10.20.50.0 0.0.0.127 any
+!
+interface GigabitEthernet0/1.50
+ ip access-group ACL_GUEST_ISOLATION in
+\end{lstlisting}
+
+\paragraph{Layer 2 Defense-in-Depth \& Device Hardening.}
+Access switches enforce \textbf{Port Security} (maximum~2 sticky MAC addresses, \texttt{violation restrict}) to block unauthorized switches and MAC flooding, \textbf{DHCP Snooping} (trusting only trunk uplinks \texttt{Gi0/1--2}) to prevent rogue DHCP servers, and \textbf{Dynamic ARP Inspection (DAI)} to defeat ARP spoofing. Telnet and HTTP are disabled across all 10 devices in favor of \textbf{SSHv2} (\texttt{ip domain name tvi.lab}, 2048-bit RSA keys, \texttt{transport input ssh}).
+
+\subsection{Quality of Service (QoS) for VoIP \& Video Convergence (Step 8)}
+Under congestion on WAN uplinks caused by AI dataset synchronization in Hanoi or warehouse telemetry in Da Nang, real-time VoIP calls suffer jitter and packet loss. To guarantee voice clarity, \textbf{Low Latency Queuing (LLQ)} is attached outbound on WAN edge interfaces (\texttt{Gi0/0} and Tunnels), strictly prioritizing VoIP packets marked \texttt{DSCP EF} (Expedited Forwarding, 30\% priority queue) and allocating guaranteed bandwidth to Video Conferencing marked \texttt{DSCP AF31} (20\% CBWFQ), while non-critical data shares the remaining bandwidth via fair queuing.
+
+\begin{lstlisting}[style=CiscoCLI, caption={Standardized LLQ QoS Policy-Map for WAN Interfaces.}]
+class-map match-any CM-VOIP
+ match dscp ef
+class-map match-any CM-VIDEO
+ match dscp af31
+!
+policy-map PM-WAN-QOS
+ class CM-VOIP
+  priority percent 30
+ class CM-VIDEO
+  bandwidth percent 20
+ class class-default
+  fair-queue
+\end{lstlisting}
+
+\subsection{Programmable Network Automation Workflow (Step 9)}
+To eliminate configuration drift across regional switches, Step~9 implements a modular Python Infrastructure-as-Code workflow located in \texttt{Automation/} using \textbf{Netmiko}, \textbf{PyYAML}, and Python's \texttt{getpass} library:
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+    \item \textbf{Externalized Inventory (\texttt{Automation/inventory.yaml}):} Stores target switch hostnames, \texttt{VLAN 99} management IPs (\texttt{192.168.1.10}, \texttt{192.168.2.10}, \texttt{192.168.3.10}), and \texttt{cisco\_ios} device profiles outside script logic.
+    \item \textbf{Zero Hardcoded Secrets:} SSH credentials are prompted interactively at runtime via \texttt{getpass()}, ensuring zero plaintext secrets in source control.
+    \item \textbf{Idempotent Execution, Backup \& Exception Handling:} Before and after applying baseline commands (\texttt{ntp server 10.10.10.50}, MOTD banner, and corporate VLANs \texttt{10, 20, 30, 99}), the script captures \texttt{show running-config} and \texttt{show ip interface brief} into timestamped files inside \texttt{Automation/backups/}. Explicit \texttt{try/except} blocks handle SSH timeout and authentication exceptions so unreachable nodes are recorded in \texttt{automation.log} (inside \texttt{Automation/logs/}) without crashing the batch run.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=0.85cm and 0.9cm,
+    box/.style={draw=PrimaryBlue, fill=SoftBlue, rounded corners=4pt, text width=3.1cm, minimum height=1.15cm, align=center, font=\scriptsize},
+    err/.style={draw=WarnAmber, fill=SoftAmber, rounded corners=4pt, text width=3.1cm, minimum height=1.15cm, align=center, font=\scriptsize},
+    ok/.style={draw=SuccessGreen, fill=SoftGreen, rounded corners=4pt, text width=3.1cm, minimum height=1.15cm, align=center, font=\scriptsize},
+    arr/.style={-{Stealth[length=2.5mm]}, thick, color=SlateDark}
+]
+\node[box] (inv) {\textbf{1. Load Inventory}\\Read \texttt{inventory.yaml} \& prompt \texttt{getpass()}};
+\node[box, right=of inv] (ssh) {\textbf{2. SSHv2 Connect}\\Netmiko \texttt{ConnectHandler} to \texttt{VLAN 99} IP};
+\node[ok, right=of ssh] (bak) {\textbf{3. Pre/Post State}\\Save running-config \& interfaces to \texttt{backups/}};
+\node[ok, below=of bak] (push) {\textbf{4. Push Baseline}\\Deploy NTP \texttt{.50}, MOTD Banner \& VLANs \texttt{10,20,30,99}};
+\node[err, below=of ssh] (exc) {\textbf{Exception Handler}\\Catch Timeout / Auth Fail $\rightarrow$ log to \texttt{automation.log}};
+
+\draw[arr] (inv) -- (ssh);
+\draw[arr] (ssh) -- node[above, font=\tiny]{Connected} (bak);
+\draw[arr] (bak) -- (push);
+\draw[arr] (ssh) -- node[right, font=\tiny]{Error} (exc);
+\end{tikzpicture}
+\caption{Execution pipeline and fault-isolation logic of \texttt{Automation/auto\_provision.py}.}
+\label{fig:automation_pipeline}
+\end{figure}
+
+\begin{lstlisting}[style=YamlStyle, caption={Externalized Switch Inventory (\texttt{Automation/inventory.yaml}).}]
+devices:
+  - hostname: HCMC-CORE-SW01
+    ip: 192.168.1.10
+    device_type: cisco_ios
+  - hostname: HANOI-RND-SW01
+    ip: 192.168.2.10
+    device_type: cisco_ios
+  - hostname: DANANG-LOG-SW01
+    ip: 192.168.3.10
+    device_type: cisco_ios
+\end{lstlisting}

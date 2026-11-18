@@ -1,0 +1,90 @@
+% ==============================================================================
+% COVER PAGE & PROJECT TEAM INFORMATION
+% ==============================================================================
+\begin{titlepage}
+    % Double geometric border using TikZ overlay
+    \begin{tikzpicture}[remember picture, overlay]
+        \draw[line width=1.2pt, color=blue!60!black]
+            ($(current page.north west) + (1.5cm,-1.5cm)$)
+            rectangle
+            ($(current page.south east) + (-1.5cm,1.5cm)$);
+        \draw[line width=0.5pt, color=blue!40!black]
+            ($(current page.north west) + (1.7cm,-1.7cm)$)
+            rectangle
+            ($(current page.south east) + (-1.7cm,1.7cm)$);
+        % Corner square accents
+        \foreach \corner in {north west, north east, south west, south east} {
+            \node[draw=blue!60!black, fill=white, minimum size=0.4cm, line width=0.8pt]
+                at ($(current page.\corner) + (\ifnum\pdfstrcmp{\corner}{north west}=0 1.6cm,-1.6cm \else \ifnum\pdfstrcmp{\corner}{north east}=0 -1.6cm,-1.6cm \else \ifnum\pdfstrcmp{\corner}{south west}=0 1.6cm,1.6cm \else -1.6cm,1.6cm \fi\fi\fi)$) {};
+        }
+    \end{tikzpicture}
+
+    \centering
+    \vspace*{0.4cm}
+
+    {\large \textbf{VIETNAM NATIONAL UNIVERSITY HO CHI MINH CITY}}\\
+    {\large \textbf{HO CHI MINH CITY UNIVERSITY OF TECHNOLOGY}}\\
+    {\large \textbf{FACULTY OF COMPUTER SCIENCE AND ENGINEERING}}
+
+    \vspace{1.2cm}
+    \includesafe[height=3.4cm]{logo_bk.png}
+    \vspace{1.2cm}
+
+    {\Large \textbf{ASSIGNMENT 2 TECHNICAL REPORT}}\\[0.3cm]
+    {\large Computer Networks (CO3093)}
+
+    \vspace{0.8cm}
+    \rule{0.82\textwidth}{0.6pt}\\[0.45cm]
+    {\LARGE \textbf{TECHVIET INNOVATIONS (TVI)}}\\
+    {\Large \textbf{LARGE ENTERPRISE NETWORK DESIGN \& IMPLEMENTATION}}
+    \vspace{0.35cm}
+    \rule{0.82\textwidth}{0.6pt}
+
+    \vspace{2.2cm}
+
+    \begin{minipage}{0.78\textwidth}
+        \large
+        \begin{tabular}{ll}
+            \textbf{Instructor:} & Vũ Thành Tài \\[0.2cm]
+            \textbf{Class:}      & CC01 \\[0.2cm]
+            \textbf{Group:}      & 10 \\[0.2cm]
+            \textbf{Role:}       & Lead Network Architecture \& Multi-Site Deployment
+        \end{tabular}
+    \end{minipage}
+
+    \vfill
+    {\large Ho Chi Minh City, November 2026}
+    \vspace*{0.6cm}
+\end{titlepage}
+
+% ==============================================================================
+% PAGE 2: PROJECT TEAM INFORMATION & WORKFLOW ALLOCATION
+% ==============================================================================
+\thispagestyle{empty}
+\begin{center}
+    \includesafe[height=2.4cm]{logo_bk.png}
+    \vspace{0.6cm}
+
+    {\LARGE \textbf{Project Team Information}}
+    \vspace{0.6cm}
+
+    \begin{tabularx}{0.95\textwidth}{|l|c|X|c|}
+        \hline
+        \textbf{Full Name} & \textbf{Student ID} & \textbf{Assigned Engineering Module \& Branch} & \textbf{Contribution} \\
+        \hline
+        Ngô Phúc Hiển & 2452339 & Team Leader: Logical/Physical Topology (Step 1), VLSM/IPv6 Schema (Step 2), Integration, Failover QA \& Technical Report (Step 10) (\texttt{feature/design-qa-report}) & 100\% \\
+        \hline
+        Nguyễn Khôi Nguyên & 2452858 & Campus Switching, 802.1Q, LACP, Rapid-PVST+, HSRP \& Centralized DHCP Relay (Steps 3--4) (\texttt{feature/switching-dhcp}) & 100\% \\
+        \hline
+        Nguyễn Thành Nhân & 2452878 & OSPFv2/v3 Underlay, Multi-AS eBGP, GRE over IPsec VPN Overlay \& LLQ QoS (Steps 5--6, 8) (\texttt{feature/routing-wan-qos}) & 100\% \\
+        \hline
+        Võ Thành Phong & 2452965 & Edge PAT/NAT Overload, ACL Isolation, L2 Hardening, SSHv2 \& Python Netmiko Automation (Steps 7, 9) (\texttt{feature/security-automation}) & 100\% \\
+        \hline
+    \end{tabularx}
+
+    \vspace{1.2cm}
+    \textbf{Link to Project GitHub Repository (Configs, Draw.io Topology, Automation \& LaTeX Source):}\\
+    \vspace{0.15cm}
+    \url{https://github.com/ReijiNgo/TVI_Project_Group10.git}
+\end{center}
+\clearpage

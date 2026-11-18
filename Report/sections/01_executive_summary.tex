@@ -1,0 +1,39 @@
+% ==============================================================================
+% SECTION 1: EXECUTIVE SUMMARY & BUSINESS ALIGNMENT
+% ==============================================================================
+\section{Executive Summary \& Business Alignment}
+
+\subsection{Business Context \& Legacy Bottlenecks}
+TechViet Innovations (TVI), a rapidly expanding technology and logistics conglomerate in Vietnam, operates across three mission-critical campuses:
+\begin{itemize}[leftmargin=1.5em, itemsep=3pt]
+    \item \textbf{Ho Chi Minh City Headquarters (HQ):} Houses corporate executive offices, finance systems, core engineering teams, and the primary enterprise Data Center supporting \textbf{2,000+ internal users}.
+    \item \textbf{Hanoi R\&D and Engineering Campus:} Hosts artificial intelligence (AI) compute laboratories and software engineering divisions requiring high-throughput East--West connectivity for \textbf{1,500+ users}, alongside an isolated guest network for external partners.
+    \item \textbf{Da Nang Logistics and Distribution Hub:} Operates automated warehouse telemetry, autonomous guided vehicles (AGVs), and real-time inventory IoT sensors supporting \textbf{500+ staff}.
+\end{itemize}
+
+TVI's legacy network relied on a flat Layer 2 topology and traditional hub-and-spoke WAN routing that backhauled all branch Internet traffic through Ho Chi Minh City. As cloud SaaS adoption, hybrid workforces, and AI/IoT telemetry expanded, this legacy architecture introduced four severe operational bottlenecks: (1) frequent Layer 2 broadcast storms causing enterprise-wide outages; (2) excessive WAN latency due to centralized Internet backhauling; (3) single points of failure at campus distribution gateways; and (4) coarse perimeter security unable to isolate untrusted Guest Wi-Fi or IoT devices from sensitive financial workloads.
+
+\subsection{Translating Business Requirements into Technical Architecture}
+To sustain an immediate base of \textbf{4,000+ internal users} and \textbf{10,000+ IoT endpoints}---while scaling cleanly beyond \textbf{10,000+ users by 2030} at \textbf{99.99\% (Four Nines)} availability---this project establishes a unified, dual-stack enterprise network engineered around five strategic pillars summarized in Table~\ref{tab:business_alignment}.
+
+\begin{table}[H]
+\centering
+\caption{Alignment of TVI Business Objectives with Enterprise Network Engineering Solutions.}
+\label{tab:business_alignment}
+\footnotesize
+\begin{tabularx}{\textwidth}{|p{3.4cm}|p{4.3cm}|X|}
+\hline
+\textbf{TVI Business Driver} & \textbf{Legacy Operational Risk} & \textbf{Engineered Technical Solution} \\
+\hline
+\textbf{Four-Nines Uptime (99.99\%)} & Single gateway or uplink failure isolates an entire campus. & Dual-switch distribution at HQ with \textbf{HSRP} (Priority 110/100, Preempt), \textbf{LACP EtherChannel} (\texttt{Port-channel 1}), and deterministic \textbf{Rapid-PVST+} Root Bridge enforcement. \\
+\hline
+\textbf{Direct Cloud Breakout \& Low SaaS Latency} & Branch traffic backhauled to HQ before reaching Internet SaaS. & Independent \textbf{eBGP} edge peering (\texttt{AS 65001--65003}) to \texttt{ISP-CORE-RTR01} (\texttt{AS 65000}) with local \textbf{PAT/NAT Overload} at each campus edge. \\
+\hline
+\textbf{Encrypted Inter-Site Collaboration} & Unencrypted WAN paths expose corporate finance and R\&D IP. & \textbf{GRE over IPsec VPN} overlay (\texttt{Tunnel12} HQ--HN, \texttt{Tunnel13} HQ--DN) carrying \textbf{OSPFv2/OSPFv3} Area~0 with AES-256/SHA-256 protection. \\
+\hline
+\textbf{Zero Trust \& Micro-Segmentation} & Flat LAN lets compromised Guest/IoT nodes scan Executive servers. & Strict VLAN segmentation (\texttt{VLAN 10, 20, 30, 50, 99, 999}), inbound \textbf{Extended ACLs}, \textbf{Port Security}, \textbf{DHCP Snooping}, \textbf{DAI}, and \textbf{SSHv2} hardening. \\
+\hline
+\textbf{VoIP/Video Convergence \& IaC Agility} & AI/bulk backups starve voice calls; manual CLI invites drift. & WAN \textbf{LLQ QoS} prioritizing VoIP (\texttt{DSCP EF}) and Video (\texttt{AF31}); externalized \textbf{Python Netmiko} (\texttt{auto\_provision.py}) provisioning and backup pipeline. \\
+\hline
+\end{tabularx}
+\end{table}
