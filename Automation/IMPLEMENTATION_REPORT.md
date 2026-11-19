@@ -1,5 +1,113 @@
 # Member 3 implementation report - Step 7 and Step 9
 
+## Step 9 automatic rollback update — 2026-11-19
+
+This section supersedes the older Step 9 failure-handling record below. Step 7
+and protected Step 1–8 sources remain unchanged. The pre-implementation
+[workspace audit](ROLLBACK_AUDIT.md) records the actual starting code, ownership
+and 112 passing tests. Existing user edits to `.gitignore` and root `README.md`
+were retained without modification by this task. No live SSH operation was run.
+
+Automatic scoped compensation is now part of the real apply transaction,
+including CLI errors, partial writes, post-check/evidence failures and first
+Ctrl-C after mutation. Complete pre JSON and readable CFG are atomically saved
+and read back before writes. Recovery collects actual current state, reverses
+only submitted owned objects and verifies full/owned/protected/interface/VLAN
+state against the pre-snapshot. Restored snapshot and a sanitized report are
+saved. A verified rollback remains a failed apply; the batch stops.
+
+Changed/created files for this update:
+
+| File | Purpose |
+|---|---|
+| automation_core.py | Transaction recovery, strict reconnect, backup readback, Result statuses, snapshots/reports |
+| rollback.py | Conservative canonical comparisons, safe original-state inverse generation, content-free diff |
+| auto_provision.py | Single-enabled-device double-confirmed live demo and progress |
+| tests/helpers.py | Stateful fake inverse commands, per-command fault injection, membership/default-name state |
+| tests/test_rollback.py | Additional state-based recovery, safety, evidence and CLI tests |
+| verify_local.py | Recovery API/import/CLI checks and tracked CFG guard |
+| ROLLBACK_AUDIT.md | Required audit before coding |
+| DEMO_ROLLBACK_EVE.md | Exact PowerShell/console demo, proof inspection and manual recovery |
+| README_STEP9.md | Current transaction, status and compatibility contracts |
+| IMPLEMENTATION_REPORT.md | This update and validation record |
+
+Recovered originals include nonstandard VLAN names, implicit default VLAN names
+(`no name`), absent VLANs, absent approved NTP and original single-line MOTD.
+Unrelated NTP/options, banner when disabled, VLANs and every protected config
+command remain outside the inverse grammar. New VLAN deletion requires no ports,
+no extra attributes and unchanged interfaces. VLAN writes require explicit local
+VTP mode (transparent/off); the script never changes VTP. Foreign object edits
+become conflicts. Transport recovery reconnects with the existing strict host
+keys and identity checks, then recomputes remaining inverses from actual state.
+CLI rejection is never blindly retried. No device-wide restore is implemented.
+
+The demo applies one approved object, verifies its real readback, saves a
+demo_changed snapshot and injects an application exception. It requires a fresh
+audit review, one explicit mandatory device, normal confirmation and separate
+demo confirmation. No-op/echo-only state cannot fabricate the demonstration.
+
+Verification normalizes known IOS show metadata/separators/CRLF/trailing spaces
+outside banners and banner serialization. It preserves order, command context,
+banner text and every other command. VLAN memberships and all interface brief
+fields are compared. Unknown output is unverified; mismatches/conflicts or missing
+durable recovery evidence cannot produce a verified result. Raw checksum equality
+is not used as recovery proof. Reports include command submissions with banner
+text redacted, not sensitive inverse commands or config diffs.
+
+Validation uses Python 3.14.4, Netmiko 4.8.0, PyYAML 6.0.3 in project `.venv`.
+The exact requested `python -B ...` commands were invoked after activating that
+environment; no global package installation or policy changes were needed.
+Final rollback validation record (2026-11-19):
+
+| Check | Actual outcome |
+|---|---|
+| unittest discovery / final offline runner | 160 passed, 0 failures/errors, 0 skipped |
+| Existing regression tests | All original 112 pass; no existing test assertions changed |
+| New rollback/comparison tests | 48 pass, with actual fake-device state comparisons |
+| security_validation.py | STATIC PASS, 9 base + 21 conditional fragments |
+| verify_local.py | 13/13 PASS; network_connections = 0 |
+| auto_provision.py --mode plan | PASS, deterministic offline plan for 3 enabled switches |
+| Member2 tests/static_audit.py | STATIC PASS |
+| Protected-source manifest | All 65 files retain their SHA256 values |
+| Demo runbook PowerShell blocks | All 6 parse with the actual PowerShell parser; none executed live |
+| git diff --check | PASS |
+| Live IOS parser / EVE-NG SSH, apply and rollback | NOT RUN |
+
+Ignored local QA evidence was regenerated at
+`Automation/reports/offline-test-results.json` and `offline-tests.txt`.
+The runner reports `runtime: NOT RUN; all SSH sessions in tests are fake`.
+The final suite includes banner-embedded fake-command recognition, VTP drift,
+broken progress output, evidence write failures and original implicit VLAN names.
+One documentation test initially mistook PowerShell `[bool](...)` for Markdown;
+the runbook now uses a direct boolean expression. A new VTP test initially also
+triggered an independent safe NTP inverse; its fixture now isolates VLAN writes.
+Neither issue required weakening any existing assertions or changing Git metadata,
+line endings, dependency versions or protected sources.
+
+Limits: no exact IOS image/replace support is evidenced by the workspace. Actual
+IOS parser support requires live preflight. Multiline/control/ambiguous original
+MOTD changes reject before mutation. Unsupported table/config formats, lost
+management reachability, concurrent changes, repeated interruption, process kill
+and controller power loss may leave recovery unverified. Administrative exclusion
+of concurrent writers and console fallback are required. Config comparisons do
+not certify dataplane traffic, NTP sync, VTP revision or startup persistence.
+Runtime artifacts remain ignored, private, unencrypted and never overwritten.
+
+**Verdict: implemented and offline-tested; prepared for EVE-NG live verification,
+subject to image/parser and lab prerequisites. Live recovery NOT VERIFIED.**
+
+The following sections retain the original 2026-11-18 implementation history;
+their Step 9 test counts/failure handling are superseded by this update.
+
+Publication was additionally checked against GitHub main `0d003e3` in an isolated
+temporary checkout. Its integrated configurations and updated protected manifest
+were retained. Windows autocrlf initially changed the bytes of 11 protected files;
+their committed Git blob bytes matched the manifest, so those exact bytes were
+restored only in the temporary checkout. No assertions or expected hashes were
+weakened. All 160 tests then passed, along with security/local/plan/Member2 checks.
+`Automation/.gitignore` now independently excludes private runtime directories
+when publishing only this folder. No runtime artifacts are part of the upload.
+
 ## Scope and observed status
 
 Implementation branch: feature/security-automation. Starting HEAD: d5590a7.

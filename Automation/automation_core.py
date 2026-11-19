@@ -226,8 +226,9 @@ def validate_snapshot(device: Device, state: dict):
 
 
 def vlan_names(state: dict) -> dict[int, str]:
+    from rollback import config_lines
     names = {}
-    lines = state['running'].splitlines()
+    lines = [line for line in config_lines(state['running']) if isinstance(line,str)]
     for i, line in enumerate(lines):
         m = re.fullmatch(r'vlan (\d+)', line.strip())
         if m and i + 1 < len(lines):
@@ -257,14 +258,16 @@ def banner_text(running: str):
 
 
 def change_set(device: Device, baseline: Baseline, contract: Contract, state: dict | None = None) -> list[str]:
+    from rollback import config_lines, motd
     existing = vlan_names(state) if state else {}
     commands = []
     for vlan in contract.profiles[device.profile]:
         if existing.get(vlan) != contract.vlans[vlan]:
             commands += [f'vlan {vlan}', f' name {contract.vlans[vlan]}', 'exit']
-    if not state or not re.search(r'^ntp server ' + re.escape(baseline.ntp_server) + r'(?:\s|$)', state['running'], re.M):
+    if not state or not any(isinstance(line,str) and re.match(r'^ntp server ' + re.escape(baseline.ntp_server) + r'(?:\s|$)', line)
+                            for line in config_lines(state['running'])):
         commands += ['ntp server ' + baseline.ntp_server]
-    if baseline.banner is not None and (not state or banner_text(state['running']) != baseline.banner):
+    if baseline.banner is not None and (not state or motd(state['running']) != baseline.banner):
         commands += ['banner motd ^' + baseline.banner + '^']
     validate_commands(commands, device, baseline, contract)
     return commands
@@ -323,7 +326,7 @@ class ArtifactStore:
 
     def save(self, device: Device, stage: str, state: dict) -> Path:
         validate_snapshot(device, state)
-        if not re.fullmatch(r'[A-Z0-9-]{1,64}', device.hostname) or stage not in {'pre','post','audit','partial'}:
+        if not re.fullmatch(r'[A-Z0-9-]{1,64}', device.hostname) or stage not in {'pre','post','audit','partial','restored','demo_changed'}:
             raise ValidationError('unsafe_artifact_name')
         folder = 'backups' if stage == 'pre' else 'states'
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
@@ -337,6 +340,23 @@ class ArtifactStore:
             except FileExistsError:
                 continue
         raise AutomationError('backup_collision')
+
+    def verify_prebackup(self, path, state):
+        """Publish human-readable private backup and read both files back before write."""
+        if json.loads(path.read_text(encoding='utf8'))['state'] != state:
+            raise AutomationError('backup_readback_failed')
+        cfg = path.with_suffix('.cfg')
+        atomic_write(cfg, state['running'])
+        if cfg.read_text(encoding='utf8') != state['running'].replace('\r\n','\n'):
+            raise AutomationError('backup_readback_failed')
+        return cfg
+
+    def recovery_report(self, device, operation_id, report):
+        path = self.root / 'reports' / f'{device.hostname}_{operation_id}_rollback_report.json'
+        if path.parent.resolve() != self.root / 'reports':
+            raise ValidationError('artifact_path_traversal')
+        atomic_write(path, json.dumps(report,indent=2,sort_keys=True)+'\n')
+        return path
 
     def event(self, device, mode, success, category, elapsed, paths, changes, partial=False):
         # No free-form exception, command output, credentials or running-config fields.
@@ -454,6 +474,13 @@ class Result:
     changes: int | None = 0
     partial: bool = False
     recovery_capture: str = 'not_needed'
+    recovery_status: str = 'not_needed'
+    rollback_attempted: bool = False
+    mutation_observed: bool | None = False
+    verification: dict = field(default_factory=dict)
+    backup_cfg: str | None = None
+    report_path: str | None = None
+    evidence_error: str | None = None
     paths: list = field(default_factory=list)
     state: dict | None = field(default=None, repr=False)
 
@@ -477,24 +504,117 @@ def validate_review(plan, devices, baseline, contract):
         validate_commands(t['commands'],d,baseline,contract)
 
 
+def authorize_session(session, device):
+    prompt = session.find_prompt().strip()
+    if prompt not in {device.hostname+'#',device.hostname+'>'}:
+        raise AutomationError('hostname_mismatch')
+    if not session.check_enable_mode():
+        try: session.enable()
+        except Exception: raise AutomationError('privilege_escalation_failed') from None
+        if not session.check_enable_mode(): raise AutomationError('privilege_escalation_failed')
+
+
 def operate(device, mode, baseline, contract, credentials, store, known_hosts, review=None,
-            factory=netmiko_factory, delay=time.sleep):
+            factory=netmiko_factory, delay=time.sleep, *, demo=False, progress=None):
+    from rollback import (command_units, compensation, diff_summary, interface_table,
+                          owned, preflight, protected, safe_commands, verification, vlan_table)
     if mode not in {'audit','apply'}:
         raise ValidationError('invalid_live_mode')
     result = Result(device.hostname)
     start, session, mutated = time.monotonic(), None, False
-    try:
-        if mode == 'apply': validate_review(review,[device],baseline,contract)
-        session = connect(device, credentials, factory, known_hosts, delay=delay)
-        prompt = session.find_prompt().strip()
-        if prompt not in {device.hostname+'#',device.hostname+'>'}:
-            raise AutomationError('hostname_mismatch')
-        if not session.check_enable_mode():
+    started = datetime.now(timezone.utc).isoformat()
+    operation_id = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')+'_'+uuid.uuid4().hex
+    before, pre_path, restored_path, restored_state = None, None, None, None
+    attempted, recovery_errors, conflicts = [], [], []
+    demo_injected, demo_proof, logged = False, None, False
+
+    def say(message):
+        # A broken console/progress sink must never prevent device recovery.
+        if progress:
+            try: progress(message)
+            except Exception: pass
+
+    def send(commands_to_send):
+        response = session.send_config_set(commands_to_send,cmd_verify=True,
+                                           error_pattern=CLI_ERROR.pattern,read_timeout=30)
+        validate_output(response,'cisco_cli_error')
+
+    def recovery_read(reconnect=False):
+        nonlocal session
+        if not reconnect:
             try:
-                session.enable()
+                # Netmiko can raise before its normal exit_config_mode call.
+                session.exit_config_mode()
+                authorize_session(session,device)
+                return collect(session,device)
             except Exception:
-                raise AutomationError('privilege_escalation_failed') from None
-            if not session.check_enable_mode(): raise AutomationError('privilege_escalation_failed')
+                pass
+        if session is not None:
+            try: session.disconnect()
+            except Exception: pass
+        session = connect(device,credentials,factory,known_hosts,delay=delay)
+        authorize_session(session,device)
+        return collect(session,device)
+
+    def recover():
+        nonlocal restored_path, restored_state, conflicts
+        result.success, result.changes = False, None
+        result.rollback_attempted, result.recovery_status = True, 'unverified'
+        result.mutation_observed = None
+        result.verification = {k:'UNVERIFIED' for k in ('full_config','owned_state','protected_state','interface_state','vlan_state')}
+        try:
+            say('[5/7] Starting automatic rollback of Step 9-owned settings')
+            current = recovery_read()
+            result.mutation_observed = owned(before,device,baseline,contract) != owned(current,device,baseline,contract)
+            try:
+                result.paths.append(str(store.save(device,'partial',current)))
+                result.recovery_capture = 'saved'
+            except Exception as exc:
+                result.recovery_capture = 'failed:'+error_category(exc)
+            for attempt in range(2):
+                inverses, conflicts = compensation(before,current,attempted,device,baseline,contract)
+                try:
+                    for inverse in inverses: send(inverse)
+                    break
+                except Exception as exc:
+                    category = error_category(exc)
+                    recovery_errors.append(category)
+                    if category not in {'ssh_timeout','connection_failed','host_key_or_ssh_transport_failed','filesystem_or_transport_failed'} or attempt:
+                        break
+                    # An ambiguous write is never replayed blindly. Reconnect and
+                    # derive remaining inverses from the device's actual state.
+                    current = recovery_read(reconnect=True)
+            say('[6/7] Re-auditing restored device configuration')
+            restored = recovery_read()
+            restored_state = restored
+            result.verification = verification(before,restored,device,baseline,contract)
+            try:
+                restored_path = str(store.save(device,'restored',restored))
+                result.paths.append(restored_path)
+            except Exception as exc:
+                result.evidence_error = 'restored_snapshot:'+error_category(exc)
+            required = ('full_config','owned_state','protected_state','interface_state','vlan_state')
+            matches = all(result.verification.get(k) == 'MATCH' for k in required)
+            # Recovered transient transport failures are acceptable only with all
+            # comparisons and a durable restored snapshot; CLI rejection is not.
+            rejected = any(e not in {'ssh_timeout','connection_failed','host_key_or_ssh_transport_failed','filesystem_or_transport_failed'} for e in recovery_errors)
+            if matches and not conflicts and not rejected and restored_path:
+                result.recovery_status, result.state = 'verified', restored
+            elif any(result.verification.get(k) == 'MISMATCH' for k in required) or rejected or conflicts:
+                result.recovery_status = 'incomplete'
+            for key in required: say('      '+key+': '+result.verification[key])
+        except (Exception, KeyboardInterrupt) as exc:
+            recovery_errors.append('recovery_interrupted' if isinstance(exc,KeyboardInterrupt) else error_category(exc))
+            result.recovery_status = 'unverified'
+
+    try:
+        if demo and (mode != 'apply' or device.hostname not in MANDATORY):
+            raise ValidationError('demo_requires_one_approved_device')
+        if mode == 'apply': validate_review(review,[device],baseline,contract)
+        say('[1/7] Connecting to '+device.hostname)
+        session = connect(device, credentials, factory, known_hosts, delay=delay)
+        authorize_session(session,device)
+        say('[2/7] Capturing initial device configuration')
         before = collect(session,device)
         result.state = before
         commands = change_set(device,baseline,contract,before)
@@ -503,62 +623,124 @@ def operate(device, mode, baseline, contract, credentials, store, known_hosts, r
             if target['state_sha256'] != digest(before) or target['commands'] != commands:
                 raise AutomationError('stale_or_modified_review')
             if before['vlans'] is None: raise AutomationError('vlan_preflight_unsupported')
+            preflight(before,commands,device,baseline,contract)
+            if demo and not commands: raise AutomationError('demo_requires_safe_pending_change')
         path = store.save(device,'pre' if mode == 'apply' else 'audit',before)
         result.paths.append(str(path))
+        if mode == 'apply':
+            pre_path = str(path)
+            result.backup_cfg = str(store.verify_prebackup(path,before))
+            say('      PRE-BACKUP SAVED (JSON and CFG readback verified)')
+            say('[3/7] Validating reviewed change set: REVIEW APPROVED')
         if mode == 'audit':
             result.success, result.category = True, 'audited'
         elif not commands:
             result.success, result.category = True, 'compliant_no_changes'
         else:
             validate_commands(commands,device,baseline,contract)
+            say('[4/7] Applying authorized configuration')
+            attempted = command_units(commands)[0] if demo else commands[:]
             mutated = True
-            response = session.send_config_set(commands,cmd_verify=True,error_pattern=CLI_ERROR.pattern,read_timeout=30)
-            validate_output(response,'cisco_cli_error')
+            send(attempted)
+            if demo:
+                changed = collect(session,device)
+                # Readback, not command echo, must prove the authorized unit took effect.
+                if (owned(before,device,baseline,contract) == owned(changed,device,baseline,contract) or
+                        protected(before,device,baseline,contract) != protected(changed,device,baseline,contract) or
+                        interface_table(before['interfaces']) != interface_table(changed['interfaces']) or
+                        any(c in change_set(device,baseline,contract,changed) for c in attempted if c != 'exit')):
+                    raise AutomationError('demo_change_not_proven')
+                demo_proof = str(store.save(device,'demo_changed',changed))
+                result.paths.append(demo_proof)
+                demo_injected = True
+                say('      Authorized change readback verified; CONTROLLED FAILURE INJECTED')
+                raise AutomationError('controlled_demo_failure')
             after = collect(session,device)
             result.paths.append(str(store.save(device,'post',after)))
             if change_set(device,baseline,contract,after): raise AutomationError('postcheck_baseline_failed')
-            owned = set(contract.profiles[device.profile])
-            unowned_before = {v:n for v,n in vlan_names(before).items() if v not in owned}
-            unowned_after = {v:n for v,n in vlan_names(after).items() if v not in owned}
-            if (unowned_before != unowned_after or protected_projection(before,device,baseline,contract) != protected_projection(after,device,baseline,contract)
-                    or before['interfaces'].split() != after['interfaces'].split()):
+            old_vlans, new_vlans = vlan_table(before['vlans']), vlan_table(after['vlans'])
+            profile = contract.profiles[device.profile]
+            if (any(new_vlans.get(v) != row for v,row in old_vlans.items() if v not in profile) or
+                    any(v not in old_vlans and v not in profile for v in new_vlans) or
+                    any(v in profile and (new_vlans.get(v,{}).get('ports') != row['ports'] or new_vlans.get(v,{}).get('status') != row['status']) for v,row in old_vlans.items()) or
+                    any(row['ports'] or row['status'] != 'active' for v,row in new_vlans.items() if v not in old_vlans) or
+                    protected(before,device,baseline,contract) != protected(after,device,baseline,contract) or
+                    interface_table(before['interfaces']) != interface_table(after['interfaces'])):
                 raise AutomationError('protected_configuration_changed')
             result.state = after
+            result.mutation_observed = owned(before,device,baseline,contract) != owned(after,device,baseline,contract)
             result.success, result.category, result.changes = True, 'applied_running_only', len(commands)
-    except KeyboardInterrupt:
-        result.category, result.partial = 'interrupted', mutated
-        if mutated:
-            result.changes = None
-            result.recovery_capture = 'not_attempted_after_interrupt'
-    except Exception as exc:
-        result.category, result.partial = error_category(exc), mutated
-        if mutated:
-            result.changes = None
-            try:
-                partial_state = collect(session,device)
-                result.paths.append(str(store.save(device,'partial',partial_state)))
-                result.recovery_capture = 'saved'
-            except Exception as recovery_error:
-                result.recovery_capture = 'failed:' + error_category(recovery_error)
+        try:
+            store.event(device,mode,True,result.category,time.monotonic()-start,result.paths,result.changes)
+            logged = True
+        except Exception: raise AutomationError('execution_log_write_failed') from None
+    except (Exception, KeyboardInterrupt) as exc:
+        result.success = False
+        result.category, result.partial = ('interrupted' if isinstance(exc,KeyboardInterrupt) else error_category(exc)), mutated
+        if mutated: recover()
     finally:
         if session is not None:
             try: session.disconnect()
             except Exception:
+                if result.success:
+                    result.success, result.category, result.partial = False, 'disconnect_failed', mutated
+                    if mutated: recover()
+                result.evidence_error = 'disconnect_failed'
+                try: session.disconnect()
+                except Exception: pass
+        if mode == 'apply':
+            say('[7/7] Saving transaction and recovery evidence')
+            report = {'hostname':device.hostname,'operation_id':operation_id,'started_at':started,
+                      'ended_at':datetime.now(timezone.utc).isoformat(),'pre_snapshot':pre_path,
+                      'pre_config':result.backup_cfg,'restored_snapshot':restored_path,
+                      'snapshot_paths':result.paths,'authorized_commands_submitted':safe_commands(attempted),
+                      'applied_command_count':result.changes,'failure_category':None if result.success else result.category,
+                      'mutation_possible':mutated,'mutation_observed':result.mutation_observed,
+                      'rollback_attempted':result.rollback_attempted,'recovery_status':result.recovery_status,
+                      'apply_success':result.success,'verification':result.verification,
+                      'recovery_errors':recovery_errors,'conflicts':conflicts,'partial_capture':result.recovery_capture,
+                      'diff_summary':{'available':False,'config_content_included':False},
+                      'evidence_error':result.evidence_error,'demo_requested':demo,
+                      'controlled_failure_injected':demo_injected,'demo_changed_snapshot':demo_proof,
+                      'limitations':['No IOS parser certification or end-to-end traffic test. Output comparison covers collected state only.',
+                                     'No concurrent writers permitted. Unknown output or missing snapshots prevents strict verification.'],
+                      'manual_steps':[] if result.success or result.recovery_status == 'verified' or not mutated else
+                          ['Stop batch and concurrent writers. Keep console access. Inspect private pre/partial/restored snapshots.',
+                           'Restore only unresolved owned objects from pre.cfg; preserve foreign changes. Re-audit before any new apply.',
+                           'Do not reload, erase, save startup-config or perform whole-device replacement as an automatic fallback.']}
+            if restored_path:
+                try: report['diff_summary'] = diff_summary(before,restored_state)
+                except Exception: report['diff_summary'] = {'available':False,'config_content_included':False}
+            try: result.report_path = str(store.recovery_report(device,operation_id,report))
+            except (Exception,KeyboardInterrupt):
+                result.evidence_error = 'recovery_report_write_failed'
+                if result.success and mutated:
+                    result.success, result.category, result.partial = False, 'recovery_report_write_failed', True
+                    recover()
+                    try: session.disconnect()
+                    except Exception: pass
+                if result.recovery_status == 'verified': result.recovery_status = 'unverified'
                 result.success = False
-                result.category = 'disconnect_failed'
-        try:
-            store.event(device,mode,result.success,result.category,time.monotonic()-start,result.paths,result.changes,result.partial)
-        except Exception:
-            result.success, result.category = False, 'execution_log_write_failed'
+        if not logged or not result.success:
+            try: store.event(device,mode,result.success,result.category,time.monotonic()-start,result.paths,result.changes,result.partial)
+            except Exception:
+                result.evidence_error = 'execution_log_write_failed'
+                result.success = False
+        if demo:
+            say('FINAL STATUS: '+('APPLY SUCCESSFUL' if result.success else
+                'APPLY FAILED / '+{'verified':'ROLLBACK VERIFIED','incomplete':'RECOVERY FAILED',
+                                  'unverified':'RECOVERY UNVERIFIED','not_needed':'ROLLBACK UNNECESSARY'}[result.recovery_status]))
     return result
 
 
-def batch(devices, mode, baseline, contract, credentials, store, known_hosts, review=None, factory=netmiko_factory, delay=time.sleep):
+def batch(devices, mode, baseline, contract, credentials, store, known_hosts, review=None, factory=netmiko_factory, delay=time.sleep, *, demo=False, progress=None):
+    if demo and (mode != 'apply' or len(devices) != 1 or devices[0].hostname not in MANDATORY):
+        raise ValidationError('demo_requires_one_approved_device')
     if mode == 'apply': validate_review(review,devices,baseline,contract)
     results = []
     for i,d in enumerate(devices):
         single_review = dict(review,targets=[review['targets'][i]]) if review else None
-        r = operate(d,mode,baseline,contract,credentials,store,known_hosts,single_review,factory,delay)
+        r = operate(d,mode,baseline,contract,credentials,store,known_hosts,single_review,factory,delay,demo=demo,progress=progress)
         results.append(r)
         if r.category == 'interrupted' or (mode == 'apply' and not r.success):
             results.extend(Result(other.hostname,category='not_attempted_after_failure') for other in devices[i+1:])

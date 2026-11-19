@@ -23,6 +23,8 @@ def parser():
     p.add_argument('--include-optional',action='store_true',help='Allow an explicitly named disabled optional target')
     p.add_argument('--confirm',action='store_true',help='Authorize only the supplied, state-bound review plan')
     p.add_argument('--review-plan',type=Path)
+    p.add_argument('--demo-rollback',action='store_true',help='Inject failure after one real reviewed change is read back')
+    p.add_argument('--confirm-demo',action='store_true',help='Explicitly authorize controlled rollback demo on one approved device')
     p.add_argument('--known-hosts',type=Path,default=Path.home()/'.ssh/known_hosts')
     p.add_argument('--artifact-root',type=Path,default=BASE)
     p.add_argument('--out',type=Path,help='New JSON plan file inside artifact-root/reports; never overwrite')
@@ -65,6 +67,10 @@ def main(argv=None, *, factory=None, credential_provider=credentials):
         devices = load_inventory(args.inventory,contract)
         chosen = select_devices(devices,args.device,args.group,args.include_optional,explicit=args.mode=='apply')
         baseline = Baseline.read(args.baseline,contract)
+        if args.demo_rollback or args.confirm_demo:
+            if (args.mode != 'apply' or not args.demo_rollback or not args.confirm_demo or
+                    len(args.device) != 1 or args.group or len(chosen) != 1 or not chosen[0].enabled):
+                raise ValidationError('demo_requires_apply_one_explicit_approved_device_and_confirm_demo')
         if args.mode != 'apply' and (args.confirm or args.review_plan):
             raise ValidationError('apply_flags_in_readonly_mode')
         if args.mode == 'plan':
@@ -82,7 +88,8 @@ def main(argv=None, *, factory=None, credential_provider=credentials):
         store = ArtifactStore(args.artifact_root)
         creds = credential_provider()
         kwargs = {'factory':factory} if factory else {}
-        results,code = batch(chosen,args.mode,baseline,contract,creds,store,args.known_hosts,review,**kwargs)
+        results,code = batch(chosen,args.mode,baseline,contract,creds,store,args.known_hosts,review,
+                             demo=args.demo_rollback,progress=print if args.demo_rollback else None,**kwargs)
         payload={'operation':args.mode,'results':[r.summary() for r in results],'exit_code':code}
         if args.mode == 'audit' and code == 0:
             audit_plan=make_plan(chosen,baseline,contract,{r.hostname:r.state for r in results})

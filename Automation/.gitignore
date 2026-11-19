@@ -1,0 +1,9 @@
+# Private runtime artifacts; keep these rules local to Automation for scoped uploads.
+/backups/*
+!/backups/.gitkeep
+/states/*
+!/states/.gitkeep
+/logs/*
+!/logs/.gitkeep
+/reports/*
+!/reports/.gitkeep

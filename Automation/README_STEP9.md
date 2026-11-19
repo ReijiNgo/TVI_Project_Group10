@@ -3,6 +3,9 @@
 Status: source and fake-session workflows are offline tested. No live SSH, audit,
 apply, IOS parser or EVE-NG data plane has been verified during implementation.
 See [implementation evidence](IMPLEMENTATION_REPORT.md) and [dependencies](DEPENDENCIES.md).
+Automatic scoped rollback is implemented and offline tested. For exact live
+commands, preparation and evidence inspection see [EVE-NG rollback demo](DEMO_ROLLBACK_EVE.md).
+The initial code/ownership/capability audit is in [rollback audit](ROLLBACK_AUDIT.md).
 
 ## Windows installation
 
@@ -109,7 +112,9 @@ are all required. Never substitute a desired-only offline plan for an audit revi
 
 Order: validate all input -> strict SSH -> prompt identity -> optional enable ->
 collect/validate complete state -> reject stale/tampered review -> atomic pre-backup ->
-allowlisted commands only -> collect/save post-state -> desired-state AND protected-state checks.
+read back JSON and private CFG backup -> allowlisted commands only -> collect/save
+post-state -> desired-state AND protected-state checks. Any error after mutation
+starts enters scoped recovery; successful rollback still returns failed apply.
 A fully compliant reviewed state is a successful no-op and sends zero config commands.
 A second run needs a fresh audit/review; reusing the old pre-change review fails stale.
 
@@ -117,6 +122,57 @@ Apply changes RUNNING configuration only. It never saves startup-config, automat
 rolls back another member's configuration, provisions users, generates keys or loads
 Step 7 files. After manual validation the integration owner can save the device.
 A failed apply stops the remaining batch; unattempted targets are explicitly reported.
+
+## Automatic rollback and verified recovery
+
+Before apply, strict parsers validate running config, VLAN membership and interface
+tables. A VLAN delta requires explicit `vtp mode transparent` or `vtp mode off`
+in running-config; server/client/default/unknown mode is rejected to prevent
+cross-device propagation. Existing changed VLAN names must be safely representable.
+An attempted banner change requires an absent or safely restorable single-line
+ASCII original; multiline/control/ambiguous text fails before any mutation.
+No change to baseline, inventory or Step 7 is required for rollback.
+
+On failure, leave config mode (Netmiko may have raised before exiting), validate
+identity, collect/save partial state, and derive compensation from the pre-state
+and current device state. Reverse touched objects: restore/remove MOTD, remove
+only the newly added plain approved NTP entry, restore original VLAN names or
+remove newly created VLANs. New VLAN removal requires empty membership, no extra
+attributes, unchanged interface config and local VTP mode. Original implicit
+default VLAN names use `no name`. Foreign owned-object edits become conflicts;
+unrelated drift is preserved and prevents strict verification.
+
+Transport loss permits one recovery reconnect/retry with the same strict host-key
+policy, prompt/enable and snapshot identity checks. Remaining inverses are rebuilt
+from the actual device state, never blindly replayed. CLI rejection stops inverse
+commands. Recollect all three show commands and save a restored snapshot even
+when possible recovery is incomplete.
+
+Verification reports normalized full config, owned state, protected state,
+interface state and VLAN state separately. All five must MATCH, no conflicts or
+CLI rejection may remain, and restored snapshot/report evidence must be durable
+to report `verified`. Raw exact running equality is informational only. Known
+show headers/timestamps, separators, CRLF/trailing spaces outside banners and
+banner delimiters are normalized; command order, indentation, payload text and
+all other commands are retained. Tables compare IP/status/protocol/method and
+VLAN existence/name/status/ports; unknown output is UNVERIFIED. Comparisons
+cannot prove dataplane reachability, NTP synchronization or uncollected state.
+
+| Apply outcome | recovery_status | Exit |
+|---|---|---|
+| Successful apply or no-op | not_needed | 0 |
+| Rejected before mutation | not_needed | 1 for device preflight, 2 for CLI validation |
+| Failed apply, restored and verified | verified | 1 |
+| Recovery attempted with mismatch/conflict/rejected command | incomplete | 1 |
+| Recovery impossible, unsupported output or missing durable proof | unverified | 1 |
+| First Ctrl-C; best-effort recovery if mutation possible | actual recovery result | 130 |
+
+Demo requires `--mode apply --device <one enabled approved hostname>`, an audited
+`--review-plan`, `--confirm`, `--demo-rollback` AND `--confirm-demo`. It applies one
+complete allowlisted object and proves the delta through readback before raising
+`controlled_demo_failure`. No pending change rejects the demo. It uses the real
+transaction path. Demo adds human-readable progress before the final JSON; audit
+and ordinary apply retain JSON stdout. No live demo is run by local test scripts.
 
 ## Declarative scope
 
@@ -136,11 +192,21 @@ running configuration, unowned VLAN names and interface status.
 
 ## Runtime artifacts and errors
 
-* `backups/`: complete pre-change JSON snapshots, including raw running-config and interface/VLAN tables.
-* `states/`: timestamped audit and post-change JSON snapshots.
+* `backups/`: complete pre-change JSON plus private readable `.cfg`, both read back before mutation.
+* `states/`: audit, post, partial, restored and demo_changed JSON snapshots.
 * `logs/`: per-device structured JSON events with timestamp, category, elapsed time,
   paths, command count and partial-configuration flag; never raw output/exception payloads.
-* `reports/`: reviewed plans and generated local QA results.
+* `reports/`: reviewed plans, per-operation rollback reports and generated local QA results.
+
+Each apply report carries hostname/operation UUID/times, snapshot paths,
+authorized command submissions (banner text redacted), mutation possibility and
+observed state, original failure category, rollback status, category comparisons,
+diff counts without content, conflicts/recovery errors and manual steps. A bulk
+submission is an upper bound on attempted commands, not an exact execution trace.
+Config command echo never proves applied count after failure (`null`). Report
+and snapshot write failures are explicit; missing proof cannot claim verified
+recovery. Retain pre-backups unchanged. Reports never include raw configs,
+original banner content, inverse names/text or raw exception messages.
 
 All are ignored by Git except .gitkeep. Raw backups can contain recoverable secrets:
 use a local NTFS directory restricted to the controller account (verify its ACL in
@@ -156,14 +222,17 @@ Network shares without hard-link support fail closed before mutation.
 
 Failures: malformed input/review/local preflight exits 2; per-device SSH/auth/CLI/
 backup/post-check failure exits 1; interruption exits 130; success/no-op exits 0.
-Only transient connection establishment is retried, once. Auth/key/configuration
-errors are not retried. Every opened session is disconnected in finally. Any IOS `%`
+Only transient connection establishment is retried, once; recovery can reconnect
+and recalculate inverses after transport loss as described above. Authentication,
+host-key and CLI failures do not authorize command replay. Sessions are closed
+after use. Any IOS `%`
 response is treated conservatively as a CLI failure; inspect privately via console.
 A partial apply has an unknown applied-command count (`null`), not an invented zero.
-The pre-backup remains for operator recovery; no success is inferred from command echo.
-After a non-interrupt partial failure, a best-effort partial-state capture is attempted;
-its saved/failed category is explicitly returned without hiding the primary error.
-Ctrl-C stops further device commands and records the interruption instead.
+The pre-backup remains for operator recovery. Best-effort partial capture and
+automatic recovery run after failure, including first Ctrl-C after mutation.
+A second recovery interrupt is unverified; killing the process/controller can
+prevent recovery entirely. Keep console access and use the runbook's manual
+steps. Never use erase/reload/startup merge/configure replace as automatic fallback.
 
 ## Network prerequisites and limits
 
